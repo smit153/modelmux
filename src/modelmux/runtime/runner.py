@@ -22,7 +22,7 @@ import os
 import shutil
 import signal
 import stat
-from collections.abc import AsyncGenerator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
@@ -35,7 +35,7 @@ from modelmux.errors import (
     ProviderTimeoutError,
 )
 from modelmux.runtime.env import build_env, validate_allowlist
-from modelmux.runtime.workspace import Workspace
+from modelmux.runtime.workspace import Workspace, create_workspace
 
 if TYPE_CHECKING:
     from modelmux.config import Settings
@@ -485,3 +485,40 @@ class Run:
 def run_argv(binary: Path, args: Sequence[str]) -> tuple[str, ...]:
     """Helper for drivers: ``argv`` with the resolved binary as ``argv[0]``."""
     return (str(binary), *args)
+
+
+@dataclass(frozen=True)
+class ProbeOutput:
+    exit_code: int
+    lines: tuple[bytes, ...]
+    stderr_tail: str
+
+    def text(self) -> str:
+        """stdout and the stderr tail as one string, for simple pattern checks."""
+        stdout = b"\n".join(self.lines).decode("utf-8", "replace")
+        return f"{stdout}\n{self.stderr_tail}"
+
+
+class ProbeContext:
+    """Lets a driver's ``probe()`` run the CLI through the normal runtime path."""
+
+    def __init__(self, runner: Runner, work_root: Path) -> None:
+        self.runner = runner
+        self.work_root = work_root
+
+    @property
+    def binary(self) -> Path:
+        return self.runner.binary
+
+    async def run(self, build: Callable[[Path], Invocation], *, budget: float) -> ProbeOutput:
+        """Run one invocation (built for a fresh workspace) and collect its output.
+
+        ``budget`` is the total seconds allowed; the runner kills the process
+        group when it runs out. Runtime errors propagate as ``ModelMuxError``.
+        """
+        with create_workspace(self.work_root) as workspace:
+            invocation = build(workspace.path)
+            deadline = asyncio.get_running_loop().time() + budget
+            async with self.runner.start(invocation, workspace, deadline=deadline) as run:
+                lines = tuple([line async for line in run])
+            return ProbeOutput(run.result.exit_code, lines, run.result.stderr_tail)

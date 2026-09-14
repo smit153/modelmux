@@ -16,6 +16,7 @@ from modelmux.runtime.env import CORE_KEYS
 from modelmux.runtime.runner import (
     BinaryResolutionError,
     Invocation,
+    ProbeContext,
     Run,
     RunLimits,
     Runner,
@@ -388,3 +389,32 @@ def test_resolve_rejects_world_writable_dir(tmp_path: Path) -> None:
         resolve_binary("x", wrapper)
     os.chmod(tmp_path / "open", 0o777 | stat.S_ISVTX)  # noqa: S103 - sticky like /tmp is ok
     assert resolve_binary("x", wrapper) == wrapper.resolve()
+
+
+# ------------------------------------------------------------------ probe context
+
+
+async def test_probe_context_runs_in_fresh_workspace(
+    binary: Path, work_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = make_runner(binary, FAKE_SCENARIO="echo")
+    ctx = ProbeContext(runner, work_root)
+    seen: list[Path] = []
+
+    def build(ws: Path) -> Invocation:
+        seen.append(ws)
+        return Invocation(argv=(str(binary),), stdin=b"a\nb\n")
+
+    out = await ctx.run(build, budget=5)
+    assert ctx.binary == binary
+    assert out.exit_code == 0
+    assert out.lines == (b"a", b"b")
+    assert "a\nb" in out.text()
+    assert not seen[0].exists()
+
+
+async def test_probe_context_timeout(binary: Path, work_root: Path) -> None:
+    runner = make_runner(binary, FAKE_SCENARIO="hang_before_output")
+    ctx = ProbeContext(runner, work_root)
+    with pytest.raises(ProviderTimeoutError):
+        await ctx.run(lambda _ws: Invocation(argv=(str(binary),), stdin=b""), budget=0.3)
