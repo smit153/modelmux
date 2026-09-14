@@ -106,6 +106,12 @@ def test_third_party_loggers_redacted(log_stream: io.StringIO) -> None:
     assert "oops" in raw
 
 
+def test_uvicorn_color_message_dropped(log_stream: io.StringIO) -> None:
+    logging.getLogger("uvicorn.error").info("plain", extra={"color_message": "\x1b[36mx"})
+    (line,) = _lines(log_stream)
+    assert "color_message" not in line
+
+
 def test_bad_format_string_does_not_break(log_stream: io.StringIO) -> None:
     logging.getLogger("modelmux.test").info("value %d", "not-a-number")
     assert "value %d" in log_stream.getvalue()

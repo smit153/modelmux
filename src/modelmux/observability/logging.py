@@ -27,6 +27,9 @@ model_var: ContextVar[str | None] = ContextVar("modelmux_model", default=None)
 
 _CONTEXT_FIELDS = (("request_id", request_id_var), ("driver", driver_var), ("model", model_var))
 
+# uvicorn attaches an ANSI-coloured duplicate of its message.
+_SKIPPED_ATTRS = STANDARD_RECORD_ATTRS | {"color_message"}
+
 _content_logging = False
 
 
@@ -45,7 +48,7 @@ class JsonFormatter(logging.Formatter):
             if value is not None:
                 payload[key] = value
         for key, value in record.__dict__.items():
-            if key not in STANDARD_RECORD_ATTRS and not key.startswith("_"):
+            if key not in _SKIPPED_ATTRS and not key.startswith("_"):
                 payload[key] = value
         if record.exc_info and not record.exc_text:
             record.exc_text = self.formatException(record.exc_info)
