@@ -62,7 +62,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/modelmux/runtime/runner.py" = ["TID251"]
-"tests/**" = ["S101", "S105", "S106", "S108", "PLR2004", "TID251", "S603", "S607"]
+"tests/**" = ["S101", "S105", "S106", "S108", "PLR2004", "TID251", "S603", "S607", "ASYNC230", "ASYNC240", "ASYNC251"]
 
 # ---------------------------------------------------------------- mypy
 [tool.mypy]
