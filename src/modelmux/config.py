@@ -95,7 +95,6 @@ class Settings(BaseSettings):
     idle_timeout: PositiveSeconds = 120.0
     total_timeout: PositiveSeconds = 600.0
     kill_grace: PositiveSeconds = 3.0
-    probe_interval: PositiveSeconds = 60.0
 
     # Output caps
     max_line_bytes: PositiveInt = 4 * MiB
