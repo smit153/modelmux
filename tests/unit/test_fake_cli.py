@@ -37,7 +37,7 @@ def test_echo(fake: Path) -> None:
 
 def test_version(fake: Path) -> None:
     result = subprocess.run([str(fake), "--version"], capture_output=True, check=True, env={})
-    assert b"fake" in result.stdout
+    assert b"2.1.285" in result.stdout
 
 
 def test_dump(fake: Path, tmp_path: Path) -> None:

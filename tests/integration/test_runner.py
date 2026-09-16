@@ -104,7 +104,7 @@ async def test_environment_argv_cwd_and_files(
     monkeypatch.setenv("FAKE_OUT", str(out))
     runner = Runner(binary, home=Path("/driver-home"), env_allowlist=FAKE_ENV_KEYS, limits=FAST)
     invocation = Invocation(
-        argv=(str(binary), "-p", "--model", "sonnet"),
+        argv=(str(binary), "--flag", "--model", "sonnet"),
         stdin=b"prompt-bytes",
         files={"system-prompt.txt": b"be nice"},
     )
@@ -117,7 +117,7 @@ async def test_environment_argv_cwd_and_files(
     assert data["env"]["PATH"] == "/usr/local/bin:/usr/bin:/bin"
     assert "MODELMUX_API_KEYS" not in data["env"]
     assert "aws-secret" not in out.read_text()
-    assert data["argv"][1:] == ["-p", "--model", "sonnet"]
+    assert data["argv"][1:] == ["--flag", "--model", "sonnet"]
     assert Path(data["cwd"]).resolve() == workspace.path.resolve()
     assert data["stdin_bytes"] == len(b"prompt-bytes")
     assert data["files"] == {"system-prompt.txt": {"mode": "0o600", "text": "be nice"}}

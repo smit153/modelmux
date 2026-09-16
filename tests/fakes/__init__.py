@@ -11,8 +11,12 @@ FAKE_CLI = Path(__file__).with_name("fake_cli.py")
 # Env vars the fake CLI reads. Tests add these to the driver allowlist only.
 FAKE_ENV_KEYS = frozenset(
     {"FAKE_SCENARIO", "FAKE_OUT", "FAKE_SIZE", "FAKE_FIXTURE", "FAKE_DELAY", "FAKE_EXIT",
-     "FAKE_VERSION"}
+     "FAKE_VERSION", "FAKE_UNKNOWN_FLAG", "FAKE_PROBE", "FAKE_REPLY", "FAKE_NO_USAGE",
+     "FAKE_HANG_AFTER"}
 )  # fmt: skip
+
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def install_fake_cli(directory: Path, name: str = "fake-cli") -> Path:

@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","cwd":"/tmp/modelmux/mmx-fixture","session_id":"00000000-0000-4000-8000-000000000000","tools":[],"mcp_servers":[],"model":"claude-sonnet-5-5","permissionMode":"dontAsk","slash_commands":[],"apiKeySource":"none","claude_code_version":"2.1.285","skills":[],"uuid":"00000000-0000-4000-8000-000000000001"}
+{"type":"system","subtype":"status","status":"requesting","session_id":"00000000-0000-4000-8000-000000000000","uuid":"00000000-0000-4000-8000-000000000001"}
+{"type":"assistant","message":{"id":"00000000-0000-4000-8000-000000000001","role":"assistant","type":"message","content":[{"type":"text","text":"partial"}]},"parent_tool_use_id":null,"session_id":"00000000-0000-4000-8000-000000000000","uuid":"00000000-0000-4000-8000-000000000001"}

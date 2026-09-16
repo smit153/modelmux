@@ -50,6 +50,9 @@ ignore = [
     "PLR2004",  # magic values are fine in HTTP status comparisons
 ]
 
+[tool.ruff.lint.pylint]
+max-returns = 10  # event parsers dispatch with early returns
+
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "subprocess".msg = "Spawn processes only via modelmux.runtime.runner."
 "os.system".msg = "No shells. Spawn processes only via modelmux.runtime.runner."

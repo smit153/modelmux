@@ -7,6 +7,19 @@ Behaviour is chosen with ``FAKE_SCENARIO``. Other knobs:
 - ``FAKE_FIXTURE``: JSONL file to replay (``replay`` scenario)
 - ``FAKE_DELAY``: seconds between replayed lines (default 0)
 
+Claude mode (argv contains ``-p``) imitates ``claude -p --output-format
+stream-json``: ``--version``, "unknown option" for ``FAKE_UNKNOWN_FLAG``,
+the empty-input error, and these scenarios:
+
+- ``claude_text`` (default): a synthetic stream replying ``FAKE_REPLY``
+  (``__STDIN__`` replies with the prompt it received)
+- ``claude_fixture``: replay ``FAKE_FIXTURE`` then exit ``FAKE_EXIT``;
+  ``FAKE_HANG_AFTER=1`` sleeps afterwards instead of exiting
+- any generic scenario above
+
+Requests whose stdin contains ``modelmux-probe`` use ``FAKE_PROBE``
+(default ``claude_text`` replying "ok") instead of ``FAKE_SCENARIO``.
+
 It is launched through a wrapper script (see ``tests/fakes/__init__.py``)
 so it runs with the test interpreter under the runner's minimal environment.
 """
@@ -195,6 +208,99 @@ def scenario_ignore_stdin() -> int:
     return 0
 
 
+INPUT_REQUIRED = (
+    "Error: Input must be provided either through stdin or as a prompt argument when using --print"
+)
+
+
+def emit(event: dict[str, object]) -> None:
+    out(json.dumps(event))
+
+
+def record_invocation(stdin: bytes) -> None:
+    cwd = Path.cwd()
+    record(
+        {
+            "env": dict(os.environ),
+            "argv": sys.argv,
+            "cwd": str(cwd),
+            "stdin": stdin.decode("utf-8", "replace"),
+            "files": {
+                p.name: {"mode": oct(p.stat().st_mode & 0o777), "text": p.read_text()}
+                for p in sorted(cwd.iterdir())
+                if p.is_file()
+            },
+        }
+    )
+
+
+def claude_text(reply: str) -> int:
+    session = {"session_id": "fake", "uuid": "fake"}
+    emit({"type": "system", "subtype": "init", "tools": [], "mcp_servers": [], **session})
+    half = len(reply) // 2
+    for chunk in (reply[:half], reply[half:]):
+        if chunk:
+            emit(
+                {
+                    "type": "stream_event",
+                    "event": {"type": "content_block_delta", "index": 0,
+                              "delta": {"type": "text_delta", "text": chunk}},
+                    "parent_tool_use_id": None,
+                    **session,
+                }
+            )  # fmt: skip
+    emit(
+        {
+            "type": "assistant",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": reply}]},
+            "parent_tool_use_id": None,
+            **session,
+        }
+    )
+    result: dict[str, object] = {
+        "type": "result", "subtype": "success", "is_error": False, "result": reply,
+        "permission_denials": [], **session,
+    }  # fmt: skip
+    if not os.environ.get("FAKE_NO_USAGE"):
+        result["usage"] = {
+            "input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 3,
+            "cache_creation_input_tokens": 2,
+        }  # fmt: skip
+    emit(result)
+    return 0
+
+
+def claude_mode() -> int:
+    stdin = sys.stdin.buffer.read()
+    if not stdin.strip():
+        sys.stderr.write(INPUT_REQUIRED + "\n")
+        return 1
+    probe = b"modelmux-probe" in stdin
+    if not probe:
+        record_invocation(stdin)
+    name = os.environ.get("FAKE_PROBE" if probe else "FAKE_SCENARIO", "claude_text")
+    if name == "claude_text":
+        reply = "ok" if probe else os.environ.get("FAKE_REPLY", "Hello from fake Claude.")
+        if reply == "__STDIN__":
+            reply = stdin.decode("utf-8", "replace")
+        return claude_text(reply)
+    if name == "claude_fixture":
+        delay = float(os.environ.get("FAKE_DELAY", "0"))
+        for raw in Path(os.environ["FAKE_FIXTURE"]).read_bytes().splitlines():
+            if raw.strip():
+                out(raw)
+                if delay:
+                    time.sleep(delay)
+        if os.environ.get("FAKE_HANG_AFTER"):
+            time.sleep(3600)
+        return int(os.environ.get("FAKE_EXIT", "0"))
+    fn = SCENARIOS.get(name)
+    if fn is None:
+        sys.stderr.write(f"unknown scenario {name}\n")
+        return 64
+    return int(fn())
+
+
 SCENARIOS = {
     name.removeprefix("scenario_"): fn
     for name, fn in globals().items()
@@ -203,10 +309,16 @@ SCENARIOS = {
 
 
 def main() -> int:
-    name = os.environ.get("FAKE_SCENARIO", "echo")
     if "--version" in sys.argv:
-        out(os.environ.get("FAKE_VERSION", "9.9.9 (fake)"))
+        out(os.environ.get("FAKE_VERSION", "2.1.285 (Claude Code)"))
         return 0
+    unknown = os.environ.get("FAKE_UNKNOWN_FLAG")
+    if unknown and unknown in sys.argv:
+        sys.stderr.write(f"error: unknown option '{unknown}'\n")
+        return 1
+    if "-p" in sys.argv:
+        return claude_mode()
+    name = os.environ.get("FAKE_SCENARIO", "echo")
     fn = SCENARIOS.get(name)
     if fn is None:
         sys.stderr.write(f"unknown scenario {name}\n")
