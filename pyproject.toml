@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.4",
     "jsonschema>=4.23",
     "prometheus-client>=0.20",
+    "packaging>=24",
 ]
 
 [dependency-groups]
