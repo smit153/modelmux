@@ -265,6 +265,11 @@ class Run:
         proc = self._proc
         if self._result is None and proc is not None and proc.returncode is not None:
             self._result = self._make_result(proc.returncode)
+        # Close the pipes now instead of at garbage collection, which may happen
+        # after the event loop has closed. asyncio has no public API for this.
+        transport = getattr(proc, "_transport", None)
+        if transport is not None:
+            transport.close()
         log.info(
             "process finished",
             extra={
