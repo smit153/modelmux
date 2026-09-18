@@ -225,6 +225,7 @@ def record_invocation(stdin: bytes) -> None:
             "argv": sys.argv,
             "cwd": str(cwd),
             "stdin": stdin.decode("utf-8", "replace"),
+            "pid": os.getpid(),
             "files": {
                 p.name: {"mode": oct(p.stat().st_mode & 0o777), "text": p.read_text()}
                 for p in sorted(cwd.iterdir())

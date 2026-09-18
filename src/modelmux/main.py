@@ -24,8 +24,10 @@ from modelmux import __version__
 from modelmux.api.auth import Authenticator
 from modelmux.api.handlers import register_exception_handlers
 from modelmux.api.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
+from modelmux.api.routes_chat import router as chat_router
 from modelmux.api.routes_health import Readiness
 from modelmux.api.routes_health import router as health_router
+from modelmux.api.routes_models import router as models_router
 from modelmux.config import ConfigError, Settings, load_settings
 from modelmux.core.pipeline import Pipeline
 from modelmux.drivers.base import Driver
@@ -143,6 +145,8 @@ def create_app(
 
     register_exception_handlers(app)
     app.include_router(health_router)
+    app.include_router(chat_router)
+    app.include_router(models_router)
 
     # Middleware added last runs first: request context wraps everything.
     if settings.cors_origins:
