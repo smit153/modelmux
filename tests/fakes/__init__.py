@@ -12,7 +12,7 @@ FAKE_CLI = Path(__file__).with_name("fake_cli.py")
 FAKE_ENV_KEYS = frozenset(
     {"FAKE_SCENARIO", "FAKE_OUT", "FAKE_SIZE", "FAKE_FIXTURE", "FAKE_DELAY", "FAKE_EXIT",
      "FAKE_VERSION", "FAKE_UNKNOWN_FLAG", "FAKE_PROBE", "FAKE_REPLY", "FAKE_NO_USAGE",
-     "FAKE_HANG_AFTER"}
+     "FAKE_HANG_AFTER", "FAKE_UNKNOWN_FEATURE", "FAKE_UNKNOWN_KEY"}
 )  # fmt: skip
 
 
@@ -27,7 +27,8 @@ def install_fake_cli(directory: Path, name: str = "fake-cli") -> Path:
         f"#!{sys.executable}\n"
         "import runpy, sys\n"
         f"sys.argv[0] = {str(FAKE_CLI)!r}\n"
-        f"runpy.run_path({str(FAKE_CLI)!r}, run_name='__main__')\n"
+        f"runpy.run_path({str(FAKE_CLI)!r}, init_globals={{'FAKE_NAME': {name!r}}},"
+        " run_name='__main__')\n"
     )
     os.chmod(wrapper, 0o700)
     return wrapper
