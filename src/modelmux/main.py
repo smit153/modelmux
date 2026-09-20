@@ -38,6 +38,8 @@ from modelmux.drivers.registry import (
     resolve_models,
 )
 from modelmux.observability.logging import setup_logging
+from modelmux.observability.metrics import Metrics
+from modelmux.observability.metrics import router as metrics_router
 from modelmux.runtime.limits import ConcurrencyLimiter
 from modelmux.runtime.runner import (
     BinaryResolutionError,
@@ -142,11 +144,16 @@ def create_app(
         driver=driver, runner=runner, limiter=limiter, models=models, settings=settings
     )
     app.state.readiness = Readiness(saturated=limiter.saturated)
+    app.state.metrics = None
+    if settings.enable_metrics:
+        app.state.metrics = Metrics(active=lambda: limiter.active, waiting=lambda: limiter.waiting)
 
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(models_router)
+    if settings.enable_metrics:
+        app.include_router(metrics_router)
 
     # Middleware added last runs first: request context wraps everything.
     if settings.cors_origins:

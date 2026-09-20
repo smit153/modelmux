@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Awaitable
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -17,8 +18,9 @@ from modelmux.api.middleware import get_request_id, new_request_id, require_json
 from modelmux.api.schemas import ChatCompletionRequest, validate_request
 from modelmux.config import Settings
 from modelmux.core.pipeline import Pipeline
-from modelmux.errors import InvalidRequestError, UnsupportedParameterError
+from modelmux.errors import InvalidRequestError, ModelMuxError, UnsupportedParameterError
 from modelmux.observability.logging import model_var
+from modelmux.observability.metrics import Metrics
 
 log = logging.getLogger("modelmux.api.chat")
 
@@ -97,11 +99,25 @@ async def chat_completions(request: Request) -> Response:
     reject_unavailable_features(req)
 
     request_id = get_request_id(request.scope) or new_request_id()
+    metrics: Metrics | None = request.app.state.metrics
+    started = time.monotonic()
+    outcome = "ok"
     try:
         result = await run_until_disconnect(request, pipeline.complete(req, request_id))
     except ClientDisconnectedError:
+        outcome = "client_closed"
         log.info("client closed the connection", extra={"event": "client_closed"})
         return Response(status_code=CLIENT_CLOSED_STATUS)
+    except ModelMuxError as exc:
+        outcome = exc.code
+        raise
+    except Exception:
+        outcome = "internal_error"
+        raise
+    finally:
+        if metrics is not None:
+            label = req.model if req.model in pipeline.models else "unknown"
+            metrics.observe(label, outcome, time.monotonic() - started)
 
     headers = {}
     if ignored := req.ignored_params():
