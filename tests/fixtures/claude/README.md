@@ -6,6 +6,7 @@ UUIDs, timestamps and local paths replaced with fixed values):
 - `text_partial.jsonl`: plain reply with `--include-partial-messages`
   (run with a planted CLAUDE.md and hook; both were ignored)
 - `model_not_found.jsonl`: invalid model name (API error, zero cost)
+- `commands_changed.jsonl`: emitted under ModelMux's minimal environment
 - `tool_use_read.jsonl`: one-off capture with `--tools Read` in an empty
   directory: `content_block_start` tool_use, `tool_result`, `error_max_turns`
 

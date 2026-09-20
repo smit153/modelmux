@@ -172,6 +172,12 @@ def test_individual_events(line: bytes, expected: NormalizedEvent) -> None:
     assert parse_line(line) == [expected]
 
 
+def test_recorded_commands_changed_is_benign() -> None:
+    assert parse_fixture("commands_changed.jsonl") == [Ignored("system.commands_changed")]
+    line = b'{"type":"system","subtype":"commands_changed","commands":[{"name":"x"}]}'
+    assert parse_line(line) == [ToolAttempt("commands_enabled", "")]
+
+
 def test_result_error_max_turns() -> None:
     line = b'{"type":"result","subtype":"error_max_turns","is_error":true}'
     assert parse_line(line) == [ProviderFailure(FailureKind.MAX_TURNS, "max turns reached")]

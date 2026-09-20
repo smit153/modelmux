@@ -121,6 +121,12 @@ def _system(data: dict[str, Any]) -> list[NormalizedEvent]:
             names = [str(t) for t in tools] + [str(s) for s in servers]
             return [ToolAttempt(kind="tools_enabled", detail=sanitize_detail(",".join(names)))]
         return [Ignored("system.init")]
+    if subtype == "commands_changed":
+        # Seen with Claude Code 2.1.285 under a minimal environment. Benign
+        # only while no commands are available (slash commands are disabled).
+        if data.get("commands"):
+            return [ToolAttempt(kind="commands_enabled", detail="")]
+        return [Ignored("system.commands_changed")]
     if "hook" in subtype or looks_like_execution(subtype):
         return [ToolAttempt(kind=f"system.{sanitize_detail(subtype, 48)}", detail="")]
     return [Ignored(f"system.{subtype}")]
