@@ -5,6 +5,24 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+import pytest
+
+from tests.conftest import TEST_API_KEY
+from tests.fakes import FIXTURES
+
+AUTH = {"Authorization": f"Bearer {TEST_API_KEY}"}
+
+
+def chat_body(content: str = "Hi", **kwargs: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {"model": "sonnet", "messages": [{"role": "user", "content": content}]}
+    body.update(kwargs)
+    return body
+
+
+def use_claude_fixture(monkeypatch: pytest.MonkeyPatch, name: str, exit_code: int = 0) -> None:
+    monkeypatch.setenv("FAKE_SCENARIO", "claude_fixture")
+    monkeypatch.setenv("FAKE_FIXTURE", str(FIXTURES / "claude" / name))
+    monkeypatch.setenv("FAKE_EXIT", str(exit_code))
 
 
 def assert_openai_error(

@@ -6,8 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.helpers import assert_openai_error
-from tests.integration.conftest import AUTH, chat_body, use_claude_fixture
+from tests.helpers import AUTH, assert_openai_error, chat_body, use_claude_fixture
 
 
 def test_metrics_disabled_by_default(client: TestClient) -> None:

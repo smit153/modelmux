@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from modelmux.config import Settings, load_settings
-from tests.fakes import install_fake_cli
+from modelmux.main import create_app
+from tests.fakes import FAKE_ENV_KEYS, install_fake_cli
 
 TEST_API_KEY = "test-key-" + "a" * 40
 OTHER_API_KEY = "test-key-" + "b" * 40
@@ -54,3 +57,20 @@ def make_settings(tmp_path: Path, fake_claude: Path) -> Callable[..., Settings]:
         return load_settings(**values)
 
     return factory
+
+
+@pytest.fixture
+def make_app(make_settings: Callable[..., Settings]) -> Callable[..., FastAPI]:
+    """The real app, wired to the fake CLI (FAKE_* env passes through in tests only)."""
+
+    def factory(**overrides: Any) -> FastAPI:
+        return create_app(make_settings(**overrides), extra_env_allowlist=FAKE_ENV_KEYS)
+
+    return factory
+
+
+@pytest.fixture
+def client(make_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
+    """A client for the app after its startup probe has run."""
+    with TestClient(make_app(), raise_server_exceptions=False) as c:
+        yield c

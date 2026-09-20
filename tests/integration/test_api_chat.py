@@ -14,8 +14,7 @@ from fastapi.testclient import TestClient
 
 from modelmux.main import _startup_checks
 from tests.conftest import TEST_API_KEY
-from tests.helpers import assert_openai_error
-from tests.integration.conftest import AUTH, chat_body, use_claude_fixture
+from tests.helpers import AUTH, assert_openai_error, chat_body, use_claude_fixture
 from tests.proc import group_members, wait_dead
 
 URL = "/v1/chat/completions"
