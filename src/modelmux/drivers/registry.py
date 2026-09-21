@@ -22,6 +22,7 @@ ENTRY_POINT_GROUP = "modelmux.drivers"
 
 BUILTIN_DRIVERS: dict[str, str] = {
     "claude": "modelmux.drivers.claude.driver:ClaudeDriver",
+    "codex": "modelmux.drivers.codex.driver:CodexDriver",
 }
 
 
