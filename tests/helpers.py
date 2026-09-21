@@ -13,16 +13,32 @@ from tests.fakes import FIXTURES
 AUTH = {"Authorization": f"Bearer {TEST_API_KEY}"}
 
 
-def chat_body(content: str = "Hi", **kwargs: Any) -> dict[str, Any]:
-    body: dict[str, Any] = {"model": "sonnet", "messages": [{"role": "user", "content": content}]}
+# Per driver: a default model and fixtures used by driver-agnostic tests.
+DEFAULT_MODEL = {"claude": "sonnet", "codex": "gpt-6.1-sol"}
+TOOL_FIXTURE = {"claude": "tool_use_read.jsonl", "codex": "command_execution.jsonl"}
+FAKE_REPLY_TEXT = {"claude": "Hello from fake Claude.", "codex": "Hello from fake Codex."}
+
+
+def chat_body(content: str = "Hi", *, driver: str = "claude", **kwargs: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "model": DEFAULT_MODEL[driver],
+        "messages": [{"role": "user", "content": content}],
+    }
     body.update(kwargs)
     return body
 
 
-def use_claude_fixture(monkeypatch: pytest.MonkeyPatch, name: str, exit_code: int = 0) -> None:
-    monkeypatch.setenv("FAKE_SCENARIO", "claude_fixture")
-    monkeypatch.setenv("FAKE_FIXTURE", str(FIXTURES / "claude" / name))
+def use_fixture(
+    monkeypatch: pytest.MonkeyPatch, driver: str, name: str, exit_code: int = 0
+) -> None:
+    """Make the fake CLI replay ``tests/fixtures/<driver>/<name>``."""
+    monkeypatch.setenv("FAKE_SCENARIO", "fixture")
+    monkeypatch.setenv("FAKE_FIXTURE", str(FIXTURES / driver / name))
     monkeypatch.setenv("FAKE_EXIT", str(exit_code))
+
+
+def use_claude_fixture(monkeypatch: pytest.MonkeyPatch, name: str, exit_code: int = 0) -> None:
+    use_fixture(monkeypatch, "claude", name, exit_code)
 
 
 def assert_openai_error(

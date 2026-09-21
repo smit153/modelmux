@@ -41,14 +41,26 @@ def fake_claude(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def make_settings(tmp_path: Path, fake_claude: Path) -> Callable[..., Settings]:
+def driver_name() -> str:
+    """The driver the app fixtures use. Override (e.g. parametrize) per module."""
+    return "claude"
+
+
+@pytest.fixture
+def fake_binary(tmp_path: Path, driver_name: str) -> Path:
+    """The fake CLI installed under the selected driver's binary name."""
+    return install_fake_cli(tmp_path / "bin", driver_name)
+
+
+@pytest.fixture
+def make_settings(tmp_path: Path, driver_name: str, fake_binary: Path) -> Callable[..., Settings]:
     """Settings pointing at the fake CLI and private tmp dirs."""
 
     def factory(**overrides: Any) -> Settings:
         values: dict[str, Any] = {
-            "driver": "claude",
+            "driver": driver_name,
             "api_keys": TEST_API_KEY,
-            "cli_path": fake_claude,
+            "cli_path": fake_binary,
             "work_root": tmp_path / "work",
             "driver_home": tmp_path / "home",
             "kill_grace": 0.3,
