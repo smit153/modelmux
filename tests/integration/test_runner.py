@@ -418,3 +418,30 @@ async def test_probe_context_timeout(binary: Path, work_root: Path) -> None:
     ctx = ProbeContext(runner, work_root)
     with pytest.raises(ProviderTimeoutError):
         await ctx.run(lambda _ws: Invocation(argv=(str(binary),), stdin=b""), budget=0.3)
+
+
+async def test_cancel_during_kill_waits_for_death(
+    binary: Path, workspace: Workspace, tmp_path: Path
+) -> None:
+    # The leader ignores SIGTERM, so the kill takes kill_grace. Cancelling the
+    # consumer mid-kill must not let it leave before the process is dead.
+    out = tmp_path / "pids.json"
+    runner = make_runner(binary, FAKE_SCENARIO="ignore_term_child", FAKE_OUT=str(out))
+    entered = asyncio.Event()
+
+    async def consume() -> None:
+        async with runner.start(inv(binary), workspace) as run:
+            async for _line in run:
+                entered.set()
+                await asyncio.sleep(3600)
+
+    task = asyncio.create_task(consume())
+    await entered.wait()
+    task.cancel()
+    await asyncio.sleep(0.05)
+    task.cancel()  # a second cancellation while the kill is in progress
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    pids = json.loads(out.read_text())
+    assert not alive(pids["pid"])  # dead by the time the task finished
+    assert group_members(pids["pid"]) == []

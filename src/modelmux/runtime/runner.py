@@ -256,12 +256,16 @@ class Run:
         if self._line_iter is not None:
             with contextlib.suppress(Exception):
                 await self._line_iter.aclose()
-        await self.kill(self._kill_reason or "finished")
+        # The process must be dead before the caller removes the workspace or
+        # releases its slot, even if this task is cancelled meanwhile.
+        cancelled = False
+        kill_task = self._start_kill(self._kill_reason or "finished")
+        if kill_task is not None:
+            cancelled |= await _wait_through_cancel(kill_task)
         for task in (self._stdin_task, self._stderr_task, self._exit_task):
             if task is not None and not task.done():
                 task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await task
+                cancelled |= await _wait_through_cancel(task)
         proc = self._proc
         if self._result is None and proc is not None and proc.returncode is not None:
             self._result = self._make_result(proc.returncode)
@@ -282,6 +286,8 @@ class Run:
                 "kill_reason": self._kill_reason,
             },
         )
+        if cancelled:
+            raise asyncio.CancelledError
 
     @property
     def _process(self) -> asyncio.subprocess.Process:
@@ -310,13 +316,18 @@ class Run:
         Idempotent and safe to call concurrently. The work runs in a shielded
         task, so cancelling the caller cannot leave the process alive.
         """
+        kill_task = self._start_kill(reason)
+        if kill_task is not None:
+            await asyncio.shield(kill_task)
+
+    def _start_kill(self, reason: str) -> asyncio.Task[None] | None:
         if self._proc is None:
-            return
+            return None
         if self._kill_reason is None:
             self._kill_reason = reason
         if self._kill_task is None:
             self._kill_task = asyncio.ensure_future(self._terminate_group())
-        await asyncio.shield(self._kill_task)
+        return self._kill_task
 
     async def _terminate_group(self) -> None:
         proc = self._process
@@ -485,6 +496,20 @@ class Run:
             duration=self._now() - self._started,
             stdout_bytes=self._stdout_total,
         )
+
+
+async def _wait_through_cancel(task: asyncio.Future[Any]) -> bool:
+    """Wait for ``task`` to finish; return whether we were cancelled meanwhile.
+
+    The caller re-raises the cancellation after its cleanup is complete.
+    """
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.wait({task})
+        except asyncio.CancelledError:
+            cancelled = True
+    return cancelled
 
 
 def run_argv(binary: Path, args: Sequence[str]) -> tuple[str, ...]:
