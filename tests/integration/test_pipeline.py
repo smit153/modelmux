@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -10,13 +11,13 @@ import pytest
 from modelmux import errors as e
 from modelmux.api.schemas import ChatCompletionRequest
 from modelmux.config import Settings
-from modelmux.core.pipeline import Pipeline
-from modelmux.drivers.claude.driver import ClaudeDriver
-from modelmux.drivers.registry import resolve_models
+from modelmux.core.pipeline import Pipeline, StreamEnd, TextPiece
+from modelmux.drivers.registry import load_driver_class, resolve_models
 from modelmux.runtime.limits import ConcurrencyLimiter
 from modelmux.runtime.runner import RunLimits, Runner, resolve_binary
 from modelmux.runtime.workspace import prepare_work_root
-from tests.fakes import FAKE_ENV_KEYS, FIXTURES
+from tests.fakes import FAKE_ENV_KEYS, FIXTURES, install_fake_cli
+from tests.proc import alive, group_members
 
 CLAUDE_FIXTURES = FIXTURES / "claude"
 
@@ -28,7 +29,8 @@ def settings(make_settings: Callable[..., Settings]) -> Settings:
 
 def build_pipeline(settings: Settings, max_concurrent: int = 2) -> Pipeline:
     assert settings.cli_path is not None
-    driver = ClaudeDriver(resolve_binary("claude", settings.cli_path))
+    cls = load_driver_class(settings.driver)
+    driver = cls(resolve_binary(cls.binary_name, settings.cli_path))
     prepare_work_root(settings.work_root)
     runner = Runner(
         driver.binary,
@@ -193,3 +195,78 @@ async def test_runtime_timeout_propagates(
     with pytest.raises(e.ProviderTimeoutError):
         await pipe.complete(chat(), "req_1")
     assert list(settings.work_root.iterdir()) == []
+
+
+# ------------------------------------------------------------------ streaming
+
+
+async def collect_stream(pipeline: Pipeline, req: ChatCompletionRequest) -> list[Any]:
+    return [piece async for piece in pipeline.stream(req, "req_1")]
+
+
+async def test_stream_text(pipeline: Pipeline, settings: Settings) -> None:
+    pieces = await collect_stream(pipeline, chat())
+    *texts, end = pieces
+    assert all(isinstance(p, TextPiece) for p in texts)
+    assert len(texts) == 2  # the fake sends two deltas
+    assert "".join(p.text for p in texts) == "Hello from fake Claude."
+    assert isinstance(end, StreamEnd)
+    assert end.finish_reason == "stop"
+    assert end.usage.total_tokens == 20
+    assert end.usage_available
+    assert workspaces(settings) == []
+    assert pipeline.limiter.active == 0
+
+
+async def test_stream_stop_sequence_kills(
+    pipeline: Pipeline, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_REPLY", "one two STOP three four")
+    pieces = await collect_stream(pipeline, chat(stop=["STOP"]))
+    assert "".join(p.text for p in pieces if isinstance(p, TextPiece)) == "one two "
+    assert isinstance(pieces[-1], StreamEnd)
+    assert workspaces(settings) == []
+
+
+async def test_stream_error_before_text(
+    pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_fixture(monkeypatch, "rate_limited.jsonl", 1)
+    stream = pipeline.stream(chat(), "req_1")
+    with pytest.raises(e.ProviderRateLimitedError):
+        await anext(stream)
+
+
+async def test_stream_tripwire(pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch) -> None:
+    use_fixture(monkeypatch, "tool_use_read.jsonl")
+    monkeypatch.setenv("FAKE_HANG_AFTER", "1")
+    with pytest.raises(e.SandboxViolationError):
+        await collect_stream(pipeline, chat())
+
+
+async def test_stream_closed_early_kills(
+    pipeline: Pipeline, settings: Settings, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    out = tmp_path / "rec.json"
+    monkeypatch.setenv("FAKE_OUT", str(out))
+    use_fixture(monkeypatch, "text_partial.jsonl")
+    monkeypatch.setenv("FAKE_HANG_AFTER", "1")  # never finishes on its own
+    stream = pipeline.stream(chat(), "req_1")
+    first = await anext(stream)
+    assert first == TextPiece("hello")
+    await stream.aclose()  # the client went away
+    pid = json.loads(out.read_text())["pid"]
+    assert not alive(pid)
+    assert group_members(pid) == []
+    assert workspaces(settings) == []
+    assert pipeline.limiter.active == 0
+
+
+async def test_stream_codex_single_piece(
+    make_settings: Callable[..., Settings], tmp_path: Path
+) -> None:
+    fake_codex = install_fake_cli(tmp_path / "cx", "codex")
+    pipe = build_pipeline(make_settings(driver="codex", cli_path=fake_codex))
+    pieces = await collect_stream(pipe, chat(model="gpt-6.1-sol"))
+    assert pieces[:-1] == [TextPiece("Hello from fake Codex.")]
+    assert isinstance(pieces[-1], StreamEnd)

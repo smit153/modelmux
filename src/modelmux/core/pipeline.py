@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 import secrets
 import time
+from collections.abc import AsyncGenerator
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,10 +20,12 @@ from modelmux.api.schemas import (
     ChatCompletionRequest,
     Choice,
     ResponseMessage,
+    Usage,
     stop_sequences,
 )
 from modelmux.config import Settings
 from modelmux.core.prompt import RenderedPrompt, render_prompt
+from modelmux.core.streaming import StopScanner
 from modelmux.core.usage import merge_usage, to_openai_usage
 from modelmux.drivers.base import Driver, DriverRequest, ModelInfo
 from modelmux.drivers.events import (
@@ -85,6 +89,18 @@ class _Collector:
         if self.completed is not None and self.completed.final_text is not None:
             return self.completed.final_text
         return "".join(self.finals) or "".join(self.deltas)
+
+
+@dataclass(frozen=True)
+class TextPiece:
+    text: str
+
+
+@dataclass(frozen=True)
+class StreamEnd:
+    finish_reason: str
+    usage: Usage
+    usage_available: bool
 
 
 @dataclass(frozen=True)
@@ -175,6 +191,52 @@ class Pipeline:
     ) -> RunOutcome:
         """One CLI run in a fresh workspace. Raises the classified error on failure."""
         collector = _Collector()
+        async with aclosing(self._execute(model, rendered, request_id, collector, deadline)) as it:
+            async for _event in it:
+                pass
+        return RunOutcome(text=collector.text(), usage=collector.usage)
+
+    async def stream(
+        self, req: ChatCompletionRequest, request_id: str
+    ) -> AsyncGenerator[TextPiece | StreamEnd, None]:
+        """Yield text as it arrives, then one ``StreamEnd``.
+
+        Errors before the end are raised from the generator. Closing the
+        generator early (client gone) kills the CLI and releases the slot.
+        """
+        model = self.resolve_model(req.model)
+        stops = stop_sequences(req, self.settings.max_stop_sequences)
+        rendered = render_prompt(req.messages, max_bytes=self.settings.max_prompt_bytes)
+        scanner = StopScanner(stops)
+        collector = _Collector()
+        streamed_deltas = False
+        async with self.limiter.slot():
+            events = self._execute(model, rendered, request_id, collector, None)
+            async with aclosing(events) as it:
+                async for event in it:
+                    if isinstance(event, TextDelta) and event.text:
+                        streamed_deltas = True
+                        if text := scanner.feed(event.text):
+                            yield TextPiece(text)
+                        if scanner.stopped:
+                            break  # closing the run kills the CLI
+            # Drivers without token deltas (e.g. Codex) deliver the whole message at once.
+            if not streamed_deltas and (text := scanner.feed(collector.text())):
+                yield TextPiece(text)
+            if tail := scanner.flush():
+                yield TextPiece(tail)
+        report = merge_usage(collector.usage)
+        yield StreamEnd("stop", to_openai_usage(report), usage_available=report is not None)
+
+    async def _execute(
+        self,
+        model: ModelInfo,
+        rendered: RenderedPrompt,
+        request_id: str,
+        collector: _Collector,
+        deadline: float | None,
+    ) -> AsyncGenerator[NormalizedEvent, None]:
+        """Run the CLI once, yielding events; raise the classified error at the end."""
         with create_workspace(self.work_root) as workspace:
             invocation = self.driver.build_invocation(
                 DriverRequest(
@@ -200,6 +262,7 @@ class Pipeline:
                             )
                             raise SandboxViolationError(f"{event.kind}: {event.detail}")
                         collector.add(event)
+                        yield event
             result = run.result
 
         error = self._classify(result.exit_code, result.stderr_tail, collector)
@@ -220,7 +283,6 @@ class Pipeline:
                 f"stderr_tail={result.stderr_tail[-500:]!r}"
             )
             raise error
-        return RunOutcome(text=collector.text(), usage=collector.usage)
 
     def _classify(self, exit_code: int, stderr_tail: str, c: _Collector) -> ModelMuxError | None:
         """Section 13.2 order (runtime errors and violations were already raised)."""
