@@ -66,7 +66,7 @@ async def parse_chat_request(request: Request) -> ChatCompletionRequest:
     body = await request.body()
     try:
         data = json.loads(body)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         raise InvalidRequestError(message="The request body is not valid JSON.") from None
     if not isinstance(data, dict):
         raise InvalidRequestError(message="The request body must be a JSON object.")

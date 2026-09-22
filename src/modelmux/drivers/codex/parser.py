@@ -132,7 +132,7 @@ def parse_line(line: bytes) -> list[NormalizedEvent]:
         return []
     try:
         data = json.loads(line)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return [ProviderFailure(FailureKind.PROTOCOL, "unparseable output line")]
     if not isinstance(data, dict):
         return [ProviderFailure(FailureKind.PROTOCOL, "output line is not an object")]

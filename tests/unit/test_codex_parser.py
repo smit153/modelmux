@@ -162,3 +162,8 @@ def test_individual_events(line: bytes, expected: list[NormalizedEvent]) -> None
 )
 def test_classify(message: str, kind: FailureKind) -> None:
     assert classify_failure(message) is kind
+
+
+def test_deeply_nested_line_never_raises() -> None:
+    line = ('{"type":"item.started","x":' + "[" * 100_000 + "]" * 100_000 + "}").encode()
+    assert parse_line(line) == [ProviderFailure(FailureKind.PROTOCOL, "unparseable output line")]

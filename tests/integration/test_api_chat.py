@@ -256,3 +256,9 @@ def test_bearer_with_other_key_allowed(make_app: Callable[..., FastAPI]) -> None
     with TestClient(make_app(api_keys=f"{TEST_API_KEY},{other}")) as c:
         resp = c.post(URL, json=chat_body(), headers={"Authorization": f"Bearer {other}"})
     assert resp.status_code == 200
+
+
+def test_deeply_nested_body_is_400(client: TestClient) -> None:
+    body = b'{"model":"sonnet","messages":' + b"[" * 100_000 + b"]" * 100_000 + b"}"
+    resp = client.post(URL, content=body, headers={**AUTH, "Content-Type": "application/json"})
+    assert_openai_error(resp, 400, "invalid_request", "invalid_request_error")

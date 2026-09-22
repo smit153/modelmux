@@ -199,3 +199,8 @@ def test_result_error_max_turns() -> None:
 )
 def test_classify(code: str | None, status: int | None, message: str, kind: FailureKind) -> None:
     assert classify_failure(code, status, message) is kind
+
+
+def test_deeply_nested_line_never_raises() -> None:
+    line = ('{"type":"assistant","x":' + "[" * 100_000 + "]" * 100_000 + "}").encode()
+    assert parse_line(line) == [ProviderFailure(FailureKind.PROTOCOL, "unparseable output line")]
