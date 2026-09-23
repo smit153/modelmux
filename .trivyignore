@@ -1,0 +1,8 @@
+# Trivy allowlist for the ModelMux image.
+#
+# CI fails on HIGH/CRITICAL vulnerabilities that have a fix available
+# (--ignore-unfixed); Debian security updates are applied at build time.
+# Unfixed base-image findings are reviewed on each release, not listed here.
+#
+# Add a CVE below ONLY with a justification and a review date, e.g.:
+#   CVE-0000-00000  # <why it does not apply>; review by YYYY-MM-DD

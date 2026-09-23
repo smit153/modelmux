@@ -53,7 +53,9 @@ LABEL org.opencontainers.image.title="modelmux" \
       io.modelmux.claude-code.version="${CLAUDE_CODE_VERSION}" \
       io.modelmux.codex.version="${CODEX_VERSION}"
 
+# Base image pinned by digest; Debian security fixes applied on top at build time.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends tini \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* \
  && groupadd --gid 10001 modelmux \
