@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from modelmux.core.pipeline import apply_stop, new_completion_id
+from modelmux.core.output import apply_stop
+from modelmux.core.pipeline import new_completion_id
 from modelmux.core.usage import merge_usage, to_openai_usage
 from modelmux.drivers.events import UsageReport
 

@@ -278,6 +278,19 @@ def claude_text(reply: str) -> int:
     return 0
 
 
+def next_reply() -> str | None:
+    """``FAKE_REPLIES`` (a JSON list) gives one reply per invocation, tracked in
+    the ``FAKE_COUNTER`` file; the last reply repeats."""
+    raw = os.environ.get("FAKE_REPLIES")
+    if not raw:
+        return None
+    replies = json.loads(raw)
+    counter = Path(os.environ["FAKE_COUNTER"])
+    index = int(counter.read_text()) if counter.exists() else 0
+    counter.write_text(str(index + 1))
+    return str(replies[min(index, len(replies) - 1)])
+
+
 def replay_fixture() -> int:
     delay = float(os.environ.get("FAKE_DELAY", "0"))
     for raw in Path(os.environ["FAKE_FIXTURE"]).read_bytes().splitlines():
@@ -337,7 +350,7 @@ def agent_mode(text_scenario: str, text_fn: Callable[[str], int], empty_error: s
     name = os.environ.get("FAKE_PROBE" if probe else "FAKE_SCENARIO", text_scenario)
     if name in {"claude_text", "codex_text"}:
         default = "Hello from fake Claude." if name == "claude_text" else "Hello from fake Codex."
-        reply = "ok" if probe else os.environ.get("FAKE_REPLY", default)
+        reply = "ok" if probe else next_reply() or os.environ.get("FAKE_REPLY", default)
         if reply == "__STDIN__":
             reply = stdin.decode("utf-8", "replace")
         return text_fn(reply)

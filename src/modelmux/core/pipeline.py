@@ -6,6 +6,7 @@ render prompt -> concurrency slot -> private workspace -> driver invocation
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import time
@@ -20,12 +21,16 @@ from modelmux.api.schemas import (
     ChatCompletionRequest,
     Choice,
     ResponseMessage,
+    ToolCall,
     Usage,
     stop_sequences,
 )
 from modelmux.config import Settings
+from modelmux.core.output import Answer, Invalid, interpret, repair_messages
 from modelmux.core.prompt import RenderedPrompt, render_prompt
 from modelmux.core.streaming import StopScanner
+from modelmux.core.structured import build_format, format_instructions
+from modelmux.core.tools import build_tool_policy, tool_instructions
 from modelmux.core.usage import merge_usage, to_openai_usage
 from modelmux.drivers.base import Driver, DriverRequest, ModelInfo
 from modelmux.drivers.events import (
@@ -39,6 +44,8 @@ from modelmux.drivers.events import (
     failure_to_error,
 )
 from modelmux.errors import (
+    ContextTooLargeError,
+    InvalidModelOutputError,
     ModelMuxError,
     ModelNotFoundError,
     ProtocolError,
@@ -97,22 +104,29 @@ class TextPiece:
 
 
 @dataclass(frozen=True)
+class ToolCallsPiece:
+    calls: list[ToolCall]
+
+
+@dataclass(frozen=True)
 class StreamEnd:
     finish_reason: str
     usage: Usage
     usage_available: bool
 
 
+StreamPiece = TextPiece | ToolCallsPiece | StreamEnd
+
+
+def needs_buffering(req: ChatCompletionRequest) -> bool:
+    fmt = req.response_format
+    return bool(req.tools) or (fmt is not None and fmt.type != "text")
+
+
 @dataclass(frozen=True)
 class CompletionResult:
     completion: ChatCompletion
     usage_available: bool
-
-
-def apply_stop(text: str, stops: list[str]) -> tuple[str, bool]:
-    """Truncate at the earliest stop sequence."""
-    cut = min((i for s in stops if (i := text.find(s)) >= 0), default=-1)
-    return (text[:cut], True) if cut >= 0 else (text, False)
 
 
 def new_completion_id() -> str:
@@ -153,33 +167,85 @@ class Pipeline:
     async def complete(self, req: ChatCompletionRequest, request_id: str) -> CompletionResult:
         model = self.resolve_model(req.model)
         stops = stop_sequences(req, self.settings.max_stop_sequences)
-        rendered = render_prompt(req.messages, max_bytes=self.settings.max_prompt_bytes)
-        if content_logging_enabled():
-            log.debug(
-                "prompt",
-                extra={
-                    "event": "content",
-                    "system": rendered.system,
-                    "prompt": rendered.transcript,
-                },
+        tools = build_tool_policy(req)
+        fmt = build_format(req)
+        sections = [tool_instructions(tools)] if tools else []
+        if fmt:
+            sections.append(format_instructions(fmt))
+        rendered = render_prompt(
+            req.messages, sections=sections, max_bytes=self.settings.max_prompt_bytes
+        )
+        self._log_content("prompt", system=rendered.system, prompt=rendered.transcript)
+
+        def judge(text: str) -> Answer | Invalid:
+            return interpret(
+                text,
+                tools=tools,
+                fmt=fmt,
+                stops=stops,
+                max_args_bytes=self.settings.max_tool_arguments_bytes,
             )
 
         async with self.limiter.slot():
-            outcome = await self.run_once(model, rendered, request_id)
+            # One budget for the run and its repair.
+            deadline = asyncio.get_running_loop().time() + self.settings.total_timeout
+            outcome = await self.run_once(model, rendered, request_id, deadline=deadline)
+            usage = list(outcome.usage)
+            verdict = judge(outcome.text)
+            if isinstance(verdict, Invalid):
+                repaired = await self._repair(
+                    req,
+                    model=model,
+                    sections=sections,
+                    bad_output=outcome.text,
+                    verdict=verdict,
+                    request_id=request_id,
+                    deadline=deadline,
+                )
+                usage += repaired.usage
+                verdict = judge(repaired.text)
+                if isinstance(verdict, Invalid):
+                    # No reason in the detail: it can quote model output.
+                    raise InvalidModelOutputError("output still invalid after one repair")
 
-        text, _stopped = apply_stop(outcome.text, stops)
-        report = merge_usage(outcome.usage)
-        if content_logging_enabled():
-            log.debug("completion", extra={"event": "content", "completion": text})
+        report = merge_usage(usage)
+        self._log_content("completion", completion=verdict.content or "")
+        message = ResponseMessage(content=verdict.content, tool_calls=verdict.tool_calls or None)
         completion = ChatCompletion(
             id=new_completion_id(),
             created=int(time.time()),
             model=req.model,
             system_fingerprint=self.fingerprint,
-            choices=[Choice(message=ResponseMessage(content=text), finish_reason="stop")],
+            choices=[Choice(message=message, finish_reason=verdict.finish_reason)],
             usage=to_openai_usage(report),
         )
         return CompletionResult(completion, usage_available=report is not None)
+
+    async def _repair(
+        self,
+        req: ChatCompletionRequest,
+        *,
+        model: ModelInfo,
+        sections: list[str],
+        bad_output: str,
+        verdict: Invalid,
+        request_id: str,
+        deadline: float,
+    ) -> RunOutcome:
+        """Exactly one corrective re-run within the same deadline (plan 8.3)."""
+        log.warning("invalid model output, repairing", extra={"event": "repair"})
+        messages = repair_messages(req.messages, bad_output, verdict.error)
+        try:
+            rendered = render_prompt(
+                messages, sections=sections, max_bytes=self.settings.max_prompt_bytes
+            )
+        except ContextTooLargeError:
+            raise InvalidModelOutputError("repair prompt exceeds the prompt limit") from None
+        return await self.run_once(model, rendered, request_id, deadline=deadline)
+
+    def _log_content(self, what: str, **fields: str) -> None:
+        if content_logging_enabled():
+            log.debug(what, extra={"event": "content", **fields})
 
     async def run_once(
         self,
@@ -198,12 +264,26 @@ class Pipeline:
 
     async def stream(
         self, req: ChatCompletionRequest, request_id: str
-    ) -> AsyncGenerator[TextPiece | StreamEnd, None]:
+    ) -> AsyncGenerator[StreamPiece, None]:
         """Yield text as it arrives, then one ``StreamEnd``.
+
+        Requests with tools or structured output are buffered: the validated
+        answer is produced first, then yielded as one piece.
 
         Errors before the end are raised from the generator. Closing the
         generator early (client gone) kills the CLI and releases the slot.
         """
+        if needs_buffering(req):
+            # Tools / structured output must be validated before anything is sent.
+            result = await self.complete(req, request_id)
+            choice = result.completion.choices[0]
+            if choice.message.tool_calls:
+                yield ToolCallsPiece(choice.message.tool_calls)
+            elif choice.message.content:
+                yield TextPiece(choice.message.content)
+            yield StreamEnd(choice.finish_reason, result.completion.usage, result.usage_available)
+            return
+
         model = self.resolve_model(req.model)
         stops = stop_sequences(req, self.settings.max_stop_sequences)
         rendered = render_prompt(req.messages, max_bytes=self.settings.max_prompt_bytes)
