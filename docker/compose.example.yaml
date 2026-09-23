@@ -13,6 +13,8 @@
 # - Provider login is out of scope: the CLI in the driver-home volume must
 #   already be logged in, or startup fails with "live check failed: auth".
 
+name: modelmux
+
 x-modelmux: &modelmux
   image: modelmux:latest
   build:
