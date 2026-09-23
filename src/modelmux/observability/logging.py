@@ -59,6 +59,21 @@ class JsonFormatter(logging.Formatter):
         return redact(json.dumps(payload, default=str, ensure_ascii=False))
 
 
+class StdoutHandler(logging.StreamHandler[Any]):
+    """Writes to whatever ``sys.stdout`` is at emit time, not at creation time."""
+
+    def __init__(self) -> None:
+        super().__init__(sys.stdout)
+
+    @property
+    def stream(self) -> Any:
+        return sys.stdout
+
+    @stream.setter
+    def stream(self, _value: Any) -> None:
+        pass
+
+
 def setup_logging(
     level: str = "INFO",
     *,
@@ -71,7 +86,9 @@ def setup_logging(
     _content_logging = log_content
     configure_secrets(secrets)
 
-    handler = logging.StreamHandler(stream or sys.stdout)
+    handler: logging.Handler = (
+        logging.StreamHandler(stream) if stream is not None else StdoutHandler()
+    )
     handler.setFormatter(JsonFormatter())
     handler.addFilter(RedactionFilter())
 
