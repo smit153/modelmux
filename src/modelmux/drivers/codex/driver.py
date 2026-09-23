@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import ClassVar
@@ -160,7 +161,7 @@ class CodexDriver(Driver):
             for check in (self._check_flags, self._check_config_keys, self._check_live):
                 failed = await check(ctx)
                 if failed is not None:
-                    return failed
+                    return replace(failed, version=version)
         except ModelMuxError as exc:
             return ProbeResult(ok=False, reason=f"probe run failed: {exc.code}")
         return ProbeResult(ok=True, reason="ok", version=version)

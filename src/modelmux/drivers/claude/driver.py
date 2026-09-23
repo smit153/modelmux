@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 
@@ -144,12 +145,10 @@ class ClaudeDriver(Driver):
             version = await self._check_version(ctx)
             if isinstance(version, ProbeResult):
                 return version
-            flags = await self._check_flags(ctx)
-            if flags is not None:
-                return flags
-            live = await self._check_live(ctx)
-            if live is not None:
-                return live
+            for check in (self._check_flags, self._check_live):
+                failed = await check(ctx)
+                if failed is not None:
+                    return replace(failed, version=version)
         except ModelMuxError as exc:
             return ProbeResult(ok=False, reason=f"probe run failed: {exc.code}")
         return ProbeResult(ok=True, reason="ok", version=version)

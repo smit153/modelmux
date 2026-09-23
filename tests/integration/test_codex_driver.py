@@ -127,6 +127,7 @@ async def test_probe_live_auth_failure(driver: CodexDriver, work_root: Path) -> 
     )
     result = await driver.probe(ctx)
     assert result.reason == "live check failed: auth"
+    assert result.version is not None
 
 
 async def test_probe_live_tripwire(driver: CodexDriver, work_root: Path) -> None:
