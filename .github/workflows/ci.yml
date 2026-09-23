@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  IMAGE: modelmux:ci
+  TRIVY_IMAGE: aquasec/trivy:latest
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -25,4 +29,34 @@ jobs:
       - name: Type check
         run: uv run mypy
       - name: Test
-        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+
+  image:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -f docker/Dockerfile -t "$IMAGE" .
+      - name: Smoke test (read-only, non-root, no capabilities)
+        run: |
+          docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --entrypoint sh "$IMAGE" -c \
+            'test "$(id -u)" = 10001 && claude --version && codex --version \
+             && ! touch /usr/x 2>/dev/null && test -z "$(find / -xdev -perm /6000 -type f)"'
+      - name: Export image
+        run: docker save "$IMAGE" -o image.tar
+      - name: Vulnerability scan (fail on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v "$PWD:/work" "$TRIVY_IMAGE" image --input /work/image.tar \
+            --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /work/.trivyignore \
+            --scanners vuln --exit-code 1
+      - name: SBOM (CycloneDX)
+        run: |
+          docker run --rm -v "$PWD:/work" "$TRIVY_IMAGE" image --input /work/image.tar \
+            --format cyclonedx --output /work/sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
