@@ -16,6 +16,11 @@ dependencies = [
     "packaging>=24",
 ]
 
+[project.urls]
+Homepage = "https://github.com/smit153/modelmux"
+Source = "https://github.com/smit153/modelmux"
+Issues = "https://github.com/smit153/modelmux/issues"
+
 [dependency-groups]
 dev = [
     "ruff>=0.6",
