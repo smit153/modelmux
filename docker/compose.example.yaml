@@ -1,0 +1,60 @@
+# ModelMux: one container per driver, from the same image.
+#
+#   cp docker/.env.example docker/.env    # then set MODELMUX_API_KEYS (git-ignored)
+#   docker compose -f docker/compose.example.yaml up -d --build
+#
+# Security notes:
+# - Ports are published on 127.0.0.1 only. Put a gateway (e.g. LiteLLM) in front.
+# - Each driver has its OWN driver-home volume (CLI login state); never share them.
+# - Never mount the Docker socket or host directories into these containers.
+# - The CLIs need outbound HTTPS to their provider, so the network cannot be
+#   "internal". Restrict egress to the provider's domains with a firewall or an
+#   egress proxy (see README).
+# - Provider login is out of scope: the CLI in the driver-home volume must
+#   already be logged in, or startup fails with "live check failed: auth".
+
+x-modelmux: &modelmux
+  image: modelmux:latest
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  env_file: .env
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=512m
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  user: "10001:10001"
+  pids_limit: 256
+  mem_limit: 2g
+  cpus: 2
+  networks: [modelmux]
+  restart: unless-stopped
+
+services:
+  modelmux-claude:
+    <<: *modelmux
+    environment:
+      MODELMUX_DRIVER: claude
+    volumes:
+      - claude-home:/home/modelmux/driver-home
+    ports:
+      - "127.0.0.1:8101:8000"
+
+  modelmux-codex:
+    <<: *modelmux
+    environment:
+      MODELMUX_DRIVER: codex
+    volumes:
+      - codex-home:/home/modelmux/driver-home
+    ports:
+      - "127.0.0.1:8102:8000"
+
+volumes:
+  claude-home:
+  codex-home:
+
+networks:
+  modelmux:
+    driver: bridge
