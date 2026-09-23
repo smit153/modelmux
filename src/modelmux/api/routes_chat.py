@@ -20,14 +20,15 @@ from modelmux.api.handlers import log_error
 from modelmux.api.middleware import get_request_id, new_request_id, require_json_content_type
 from modelmux.api.schemas import ChatCompletionRequest, validate_request
 from modelmux.config import Settings
-from modelmux.core.pipeline import Pipeline, StreamEnd, TextPiece, new_completion_id
-from modelmux.core.streaming import DONE, ChunkBuilder, sse, sse_error
-from modelmux.errors import (
-    InternalError,
-    InvalidRequestError,
-    ModelMuxError,
-    UnsupportedParameterError,
+from modelmux.core.pipeline import (
+    Pipeline,
+    StreamEnd,
+    StreamPiece,
+    TextPiece,
+    new_completion_id,
 )
+from modelmux.core.streaming import DONE, ChunkBuilder, sse, sse_error
+from modelmux.errors import InternalError, InvalidRequestError, ModelMuxError
 from modelmux.observability.logging import model_var
 from modelmux.observability.metrics import Metrics
 
@@ -76,16 +77,6 @@ async def parse_chat_request(request: Request) -> ChatCompletionRequest:
         raise RequestValidationError(exc.errors(include_input=False, include_url=False)) from None
 
 
-def reject_unavailable_features(req: ChatCompletionRequest) -> None:
-    """Features that land in later phases fail loudly rather than being ignored."""
-    if req.tools:
-        raise UnsupportedParameterError(message="Tools are not supported yet.", param="tools")
-    if req.response_format is not None and req.response_format.type != "text":
-        raise UnsupportedParameterError(
-            message="Structured output is not supported yet.", param="response_format"
-        )
-
-
 class _Failure:
     def __init__(self, exc: Exception) -> None:
         self.exc = exc
@@ -100,11 +91,11 @@ class StreamPump:
     can finish killing the process and removing the workspace.
     """
 
-    def __init__(self, stream: AsyncGenerator[TextPiece | StreamEnd, None]) -> None:
-        self._queue: asyncio.Queue[TextPiece | StreamEnd | _Failure] = asyncio.Queue(maxsize=1)
+    def __init__(self, stream: AsyncGenerator[StreamPiece, None]) -> None:
+        self._queue: asyncio.Queue[StreamPiece | _Failure] = asyncio.Queue(maxsize=1)
         self._task = asyncio.create_task(self._run(stream))
 
-    async def _run(self, stream: AsyncGenerator[TextPiece | StreamEnd, None]) -> None:
+    async def _run(self, stream: AsyncGenerator[StreamPiece, None]) -> None:
         try:
             async with aclosing(stream):
                 async for piece in stream:
@@ -112,7 +103,7 @@ class StreamPump:
         except Exception as exc:
             await self._queue.put(_Failure(exc))
 
-    async def next(self) -> TextPiece | StreamEnd:
+    async def next(self) -> StreamPiece:
         item = await self._queue.get()
         if isinstance(item, _Failure):
             raise item.exc
@@ -138,7 +129,7 @@ def _client_closed() -> Response:
 
 
 async def _sse_body(
-    first: TextPiece | StreamEnd,
+    first: StreamPiece,
     pump: StreamPump,
     chunks: ChunkBuilder,
     finished: Callable[[str], None],
@@ -148,8 +139,11 @@ async def _sse_body(
     piece = first
     try:
         yield sse(chunks.role())
-        while isinstance(piece, TextPiece):
-            yield sse(chunks.content(piece.text))
+        while not isinstance(piece, StreamEnd):
+            if isinstance(piece, TextPiece):
+                yield sse(chunks.content(piece.text))
+            else:
+                yield sse(chunks.tool_calls(piece.calls))
             piece = await pump.next()
         yield sse(chunks.finish(piece.finish_reason))
         if chunks.include_usage:
@@ -230,7 +224,6 @@ async def chat_completions(request: Request) -> Response:
         max_tool_schema_bytes=settings.max_tool_schema_bytes,
         max_stop_sequences=settings.max_stop_sequences,
     )
-    reject_unavailable_features(req)
 
     request_id = get_request_id(request.scope) or new_request_id()
     headers = {}

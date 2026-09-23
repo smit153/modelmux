@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from modelmux.api.schemas import Usage
+from modelmux.api.schemas import ToolCall, Usage
 from modelmux.errors import ModelMuxError
 
 DONE = b"data: [DONE]\n\n"
@@ -48,6 +48,13 @@ class ChunkBuilder:
 
     def content(self, text: str) -> dict[str, Any]:
         return self._chunk({"content": text}, None)
+
+    def tool_calls(self, calls: list[ToolCall]) -> dict[str, Any]:
+        """All calls in one chunk; each carries its index, id, name and full arguments."""
+        return self._chunk(
+            {"tool_calls": [{"index": i, **call.model_dump()} for i, call in enumerate(calls)]},
+            None,
+        )
 
     def finish(self, reason: str) -> dict[str, Any]:
         return self._chunk({}, reason)

@@ -101,10 +101,6 @@ def test_schema_error_names_field(client: TestClient) -> None:
     [
         (chat_body(model="gpt-4o"), 404, "model_not_found", "model"),
         (chat_body(n=3), 400, "invalid_request", "n"),
-        (chat_body(tools=[{"type": "function", "function": {"name": "f"}}]), 400,
-         "unsupported_parameter", "tools"),
-        (chat_body(response_format={"type": "json_object"}), 400, "unsupported_parameter",
-         "response_format"),
         (chat_body(functions=[{"name": "f"}]), 400, "unsupported_parameter", "functions"),
         ({"model": "sonnet", "messages": [{"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": "x"}}]}]}, 400, "unsupported_content",
