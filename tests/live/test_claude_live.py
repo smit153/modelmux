@@ -8,6 +8,7 @@ one chat completion):
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
@@ -99,3 +100,78 @@ def test_live_stream(tmp_path: Path) -> None:
     assert len(pieces) > 1, "expected incremental deltas, got one chunk"
     assert usage is not None
     assert usage.completion_tokens > 0
+
+
+def _sdk_without_probe(tmp_path: Path) -> openai.OpenAI:
+    """An SDK client on a live app whose startup probe is skipped (saves a request)."""
+    binary = shutil.which("claude")
+    home = os.environ.get("LIVE_DRIVER_HOME")
+    if binary is None or not home:
+        pytest.skip("needs the claude CLI and LIVE_DRIVER_HOME")
+    settings = load_settings(
+        driver="claude",
+        api_keys=TEST_API_KEY,
+        cli_path=Path(binary),
+        driver_home=Path(home),
+        work_root=tmp_path / "work",
+        models={"sonnet": "sonnet"},
+    )
+    prepare_work_root(settings.work_root)
+    return openai.OpenAI(
+        base_url="http://testserver/v1",
+        api_key=TEST_API_KEY,
+        http_client=TestClient(create_app(settings)),
+        max_retries=0,
+    )
+
+
+def test_live_tool_call(tmp_path: Path) -> None:
+    """One sonnet request: the real model follows the simulated tool protocol."""
+    sdk = _sdk_without_probe(tmp_path)
+    completion = sdk.chat.completions.create(
+        model="sonnet",
+        messages=[{"role": "user", "content": "What's the weather in Oslo and in Rome?"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Current weather for one city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                        "additionalProperties": False,
+                    },
+                },
+            }
+        ],
+    )
+    choice = completion.choices[0]
+    assert choice.finish_reason == "tool_calls", choice.message.content
+    cities = {json.loads(c.function.arguments)["city"] for c in choice.message.tool_calls or []}  # type: ignore[union-attr]
+    assert {"Oslo", "Rome"} <= cities
+
+
+def test_live_json_schema(tmp_path: Path) -> None:
+    """One sonnet request: the real model returns JSON matching a strict schema."""
+    sdk = _sdk_without_probe(tmp_path)
+    completion = sdk.chat.completions.create(
+        model="sonnet",
+        messages=[{"role": "user", "content": "Ada Lovelace: name and age at death."}],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "person",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+                    "required": ["name", "age"],
+                },
+            },
+        },
+    )
+    data = json.loads(completion.choices[0].message.content or "")
+    assert data["age"] == 36
+    assert "Ada" in data["name"]
