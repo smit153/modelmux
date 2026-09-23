@@ -1,0 +1,9 @@
+{
+  "name": "modelmux-clis",
+  "private": true,
+  "description": "Pinned AI coding CLIs bundled in the ModelMux image. Update with: npm install --package-lock-only",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.285",
+    "@openai/codex": "0.159.2"
+  }
+}
