@@ -12,24 +12,30 @@ tripwire.
 
 ```python
 from modelmux.drivers.base import (
-    Driver, DriverRequest, Invocation, ModelInfo, ProbeContext, ProbeResult,
+    Driver,
+    DriverRequest,
+    Invocation,
+    ModelInfo,
+    ProbeContext,
+    ProbeResult,
 )
 from modelmux.drivers.events import NormalizedEvent
 from modelmux.errors import ModelMuxError
 
 
 class MyDriver(Driver):
-    name = "mycli"                     # the value of MODELMUX_DRIVER
-    binary_name = "mycli"              # looked up on PATH unless MODELMUX_CLI_PATH is set
-    supported_versions = ">=1.4,<2"    # PEP 440 specifier, checked by probe()
+    name = "mycli"  # the value of MODELMUX_DRIVER
+    binary_name = "mycli"  # looked up on PATH unless MODELMUX_CLI_PATH is set
+    supported_versions = ">=1.4,<2"  # PEP 440 specifier, checked by probe()
 
     def models(self) -> list[ModelInfo]: ...
     async def probe(self, ctx: ProbeContext) -> ProbeResult: ...
     def build_invocation(self, req: DriverRequest) -> Invocation: ...
     def parse_line(self, line: bytes) -> list[NormalizedEvent]: ...
-    def classify_exit(self, exit_code: int, stderr_tail: str,
-                      seen: list[NormalizedEvent]) -> ModelMuxError | None: ...
-    def env_allowlist(self) -> frozenset[str]: ...   # optional, default: none
+    def classify_exit(
+        self, exit_code: int, stderr_tail: str, seen: list[NormalizedEvent]
+    ) -> ModelMuxError | None: ...
+    def env_allowlist(self) -> frozenset[str]: ...  # optional, default: none
 ```
 
 | Method | Responsibility |
@@ -72,7 +78,12 @@ treats every stdout line as the answer:
 from typing import ClassVar
 
 from modelmux.drivers.base import (
-    Driver, DriverRequest, Invocation, ModelInfo, ProbeContext, ProbeResult,
+    Driver,
+    DriverRequest,
+    Invocation,
+    ModelInfo,
+    ProbeContext,
+    ProbeResult,
 )
 from modelmux.drivers.events import Completed, NormalizedEvent, TextFinal
 from modelmux.errors import ModelMuxError
@@ -95,8 +106,9 @@ class EchoDriver(Driver):
     def parse_line(self, line: bytes) -> list[NormalizedEvent]:
         return [TextFinal(line.decode("utf-8", "replace")), Completed()]
 
-    def classify_exit(self, exit_code: int, stderr_tail: str,
-                      seen: list[NormalizedEvent]) -> ModelMuxError | None:
+    def classify_exit(
+        self, exit_code: int, stderr_tail: str, seen: list[NormalizedEvent]
+    ) -> ModelMuxError | None:
         return None
 ```
 
