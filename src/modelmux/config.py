@@ -108,7 +108,6 @@ class Settings(BaseSettings):
     max_tool_schema_bytes: PositiveInt = 64 * KiB
     max_tool_arguments_bytes: PositiveInt = 256 * KiB
     max_prompt_bytes: PositiveInt = 3 * MiB // 2
-    max_system_prompt_arg_bytes: PositiveInt = 100 * KiB
     max_stop_sequences: PositiveInt = 4
 
     # Logging
