@@ -30,6 +30,12 @@ jobs:
         run: uv run mypy
       - name: Test
         run: uv run pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+      - name: Coverage per package (>= 90%)
+        run: |
+          for pkg in core runtime drivers api; do
+            echo "== $pkg"
+            uv run coverage report --include="src/modelmux/$pkg/*" --fail-under=90 | tail -1
+          done
 
   image:
     runs-on: ubuntu-latest
