@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,37 @@ from tests.fakes import FAKE_ENV_KEYS, install_fake_cli
 
 TEST_API_KEY = "test-key-" + "a" * 40
 OTHER_API_KEY = "test-key-" + "b" * 40
+
+
+def _fake_cli_processes() -> set[int]:
+    """Live (non-zombie) processes started by the fake CLI or its children."""
+    found = set()
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            cmdline = Path(f"/proc/{entry}/cmdline").read_bytes().replace(b"\0", b" ")
+            state = Path(f"/proc/{entry}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except OSError:
+            continue
+        if state != "Z" and (b"pytest-of-" in cmdline or b"time.sleep(3600)" in cmdline):
+            found.add(int(entry))
+    return found
+
+
+@pytest.fixture(autouse=True)
+def _no_leftovers(tmp_path: Path) -> Iterator[None]:
+    """After every test: no fake CLI process alive, no workspace left behind (plan 16.2)."""
+    before = _fake_cli_processes()
+    yield
+    deadline = time.monotonic() + 5
+    while (leftover := _fake_cli_processes() - before) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not leftover, f"processes left running: {sorted(leftover)}"
+    work = tmp_path / "work"
+    if work.is_dir():
+        stale = [p.name for p in work.iterdir() if p.name.startswith("mmx-")]
+        assert not stale, f"workspaces left behind: {stale}"
 
 
 @pytest.fixture(autouse=True)
