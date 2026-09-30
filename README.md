@@ -8,9 +8,6 @@
 ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗██║ ╚═╝ ██║╚██████╔╝██╔╝ ██╗ 
 ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝ 
                                                                          
-   OpenAI SDK ─┐                         ┌─▶  claude -p     ─▶  Anthropic
-   LangChain  ─┼─▶  /v1/chat/completions ┤                               
-   LiteLLM    ─┘      (locked sandbox)   └─▶  codex exec    ─▶  OpenAI   
 </pre>
 
 **AI coding CLIs as a secure, OpenAI-compatible Chat Completions API.**
