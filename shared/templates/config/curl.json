@@ -1,0 +1,8 @@
+{
+  "description": "curl request",
+  "per": "provider",
+  "key_style": "shell",
+  "header": "",
+  "entry": "# {{display_name}}\ncurl {{base_url}}/chat/completions \\\n  -H \"Authorization: Bearer {{key}}\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\": \"{{model}}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello!\"}]}'\n\n",
+  "footer": ""
+}

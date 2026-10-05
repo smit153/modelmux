@@ -7,6 +7,7 @@ today, possibly Node later). Implementations share this **data**, never code.
 |---|---|
 | `providers/<name>.json` | One file per provider: how to log in, check and log out, its login volume, default port and example model. Adding a provider means adding a file here (and a driver in the server). |
 | `schema/provider.schema.json` | JSON Schema (Draft 2020-12) that every provider file must satisfy. Checked in CI. |
+| `templates/config/<target>.json` | Client config snippets printed by `modelmux config <target>`: a `header`, an `entry` repeated per provider or per model (`per`), a `footer`, and the `key_style` used to write the API key. Placeholders: `{{provider}}`, `{{PROVIDER}}`, `{{provider_var}}`, `{{display_name}}`, `{{model}}`, `{{base_url}}`, `{{key}}`. |
 | `templates/compose-service.json` | The hardening every generated compose service gets (read-only root, tmpfs, no capabilities, no-new-privileges, non-root user, limits, restart policy). The CLIs add the image, ports, driver, API-key env file and login volume. |
 
 Rules for provider files:

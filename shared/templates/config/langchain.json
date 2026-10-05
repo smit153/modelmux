@@ -1,0 +1,8 @@
+{
+  "description": "LangChain ChatOpenAI",
+  "per": "provider",
+  "key_style": "python",
+  "header": "import os\n\nfrom langchain_openai import ChatOpenAI\n",
+  "entry": "\n# {{display_name}}\n{{provider_var}} = ChatOpenAI(\n    model=\"{{model}}\",\n    base_url=\"{{base_url}}\",\n    api_key={{key}},\n    use_responses_api=False,  # ModelMux implements Chat Completions\n)\nprint({{provider_var}}.invoke(\"Hello!\").content)\n",
+  "footer": ""
+}

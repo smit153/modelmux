@@ -1,0 +1,8 @@
+{
+  "description": "LiteLLM proxy config.yaml (model_list)",
+  "per": "model",
+  "key_style": "litellm",
+  "header": "model_list:\n",
+  "entry": "  - model_name: {{provider}}-{{model}}\n    litellm_params:\n      model: openai/{{model}}\n      api_base: {{base_url}}\n      api_key: {{key}}\n",
+  "footer": ""
+}
