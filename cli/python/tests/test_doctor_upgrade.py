@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from modelmux_cli import __version__, _pinned, health, updates
+from modelmux_cli import __version__, health, release, updates
 from modelmux_cli.commands import doctor as doctor_module
 from modelmux_cli.commands import up as up_module
 from modelmux_cli.errors import DockerError
@@ -25,7 +25,9 @@ EXITED = '{"Service": "modelmux-claude", "State": "exited", "Health": "", "ExitC
 
 @pytest.fixture(autouse=True)
 def _env(fake_docker: FakeDocker, cli_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_pinned, "IMAGE", "ghcr.io/smit153/modelmux@sha256:" + "a" * 64)
+    monkeypatch.setattr(
+        release, "pinned_image", lambda: "ghcr.io/smit153/modelmux@sha256:" + "a" * 64
+    )
     monkeypatch.setattr(up_module, "port_free", lambda _port: True)
     monkeypatch.setattr(doctor_module, "port_free", lambda _port: True)
     monkeypatch.setattr(up_module, "POLL_INTERVAL", 0.0)

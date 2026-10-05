@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from modelmux_cli import _pinned, health
+from modelmux_cli import health, release
 from modelmux_cli.commands import login as login_module
 from modelmux_cli.commands import logout as logout_module
 from modelmux_cli.commands import up as up_module
@@ -43,7 +43,9 @@ def session(fake_docker: FakeDocker) -> Session:
 
 @pytest.fixture(autouse=True)
 def _env(fake_docker: FakeDocker, cli_home: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    monkeypatch.setattr(_pinned, "IMAGE", "ghcr.io/smit153/modelmux@sha256:" + "a" * 64)
+    monkeypatch.setattr(
+        release, "pinned_image", lambda: "ghcr.io/smit153/modelmux@sha256:" + "a" * 64
+    )
     monkeypatch.setattr(up_module, "port_free", lambda _port: True)
     monkeypatch.setattr(up_module, "POLL_INTERVAL", 0.0)
     monkeypatch.setattr(health, "ready", lambda _port: True)
@@ -249,7 +251,7 @@ def test_unknown_method(capsys: pytest.CaptureFixture[str], session: Session) ->
 def test_login_needs_an_image(
     capsys: pytest.CaptureFixture[str], fake_docker: FakeDocker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_pinned, "IMAGE", None)
+    monkeypatch.setattr(release, "pinned_image", lambda: None)
     code, out = cli(capsys, "login", "claude")
     assert code == 2
     assert "--image" in out

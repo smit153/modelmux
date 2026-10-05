@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from modelmux_cli import _pinned
+from modelmux_cli import release
 from modelmux_cli.config import Config
 from modelmux_cli.docker import PULL_TIMEOUT, Docker
 from modelmux_cli.errors import CliError, DockerError, UsageError
@@ -38,7 +38,7 @@ def service_name(provider: Provider) -> str:
 
 def resolve_image(config: Config, override: str | None = None) -> str:
     """The image to run: --image, then the saved override, then the pinned release image."""
-    image = override or config.image or _pinned.IMAGE
+    image = override or config.image or release.pinned_image()
     if image is None:
         raise UsageError(
             "This development build of modelmux has no pinned server image.",

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from modelmux_cli import _pinned, clientconfig, health
+from modelmux_cli import clientconfig, health, release
 from modelmux_cli.clientconfig import TARGETS, Target, load_template, render
 from modelmux_cli.commands import up as up_module
 from modelmux_cli.errors import CliError
@@ -100,7 +100,9 @@ def ready_home(
     fake_docker: FakeDocker, cli_home: Path, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> Path:  # fmt: skip
-    monkeypatch.setattr(_pinned, "IMAGE", "ghcr.io/smit153/modelmux@sha256:" + "a" * 64)
+    monkeypatch.setattr(
+        release, "pinned_image", lambda: "ghcr.io/smit153/modelmux@sha256:" + "a" * 64
+    )
     monkeypatch.setattr(up_module, "port_free", lambda _port: True)
     fake_docker.when("volume", "inspect", returns=(0, "[]", ""))
     fake_docker.when("image", "inspect", returns=(0, "[]", ""))

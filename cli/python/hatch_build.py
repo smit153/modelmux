@@ -13,6 +13,7 @@ from typing import Any
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 PARTS = ("providers", "schema", "templates")
+FILES = ("release.json",)
 
 
 class SharedDataHook(BuildHookInterface):  # type: ignore[type-arg]
@@ -21,10 +22,12 @@ class SharedDataHook(BuildHookInterface):  # type: ignore[type-arg]
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         root = Path(self.root)
         for candidate in (root.parent.parent / "shared", root / "shared"):
-            if all((candidate / part).is_dir() for part in PARTS):
+            if all((candidate / part).is_dir() for part in PARTS) and all(
+                (candidate / name).is_file() for name in FILES
+            ):
                 break
         else:
             raise RuntimeError("modelmux shared data (providers, schema) not found")
         prefix = "modelmux_cli/_shared" if self.target_name == "wheel" else "shared"
-        for part in PARTS:
+        for part in (*PARTS, *FILES):
             build_data["force_include"][str(candidate / part)] = f"{prefix}/{part}"

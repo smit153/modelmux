@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from modelmux_cli import _pinned
+from modelmux_cli import release
 from modelmux_cli.config import Config
 from modelmux_cli.errors import DockerError, UsageError
 from modelmux_cli.providers import load_providers
@@ -29,14 +29,16 @@ SECRETS = Path("/home/u/.config/modelmux/secrets.env")
 
 
 def test_resolve_image_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_pinned, "IMAGE", "ghcr.io/smit153/modelmux@sha256:" + "a" * 64)
+    monkeypatch.setattr(
+        release, "pinned_image", lambda: "ghcr.io/smit153/modelmux@sha256:" + "a" * 64
+    )
     assert resolve_image(Config()).endswith("a" * 64)
     assert resolve_image(Config(image="saved:1")) == "saved:1"
     assert resolve_image(Config(image="saved:1"), "flag:2") == "flag:2"
 
 
 def test_dev_build_without_image(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_pinned, "IMAGE", None)
+    monkeypatch.setattr(release, "pinned_image", lambda: None)
     with pytest.raises(UsageError, match="no pinned server image") as info:
         resolve_image(Config())
     assert "--image" in (info.value.hint or "")
