@@ -11,7 +11,8 @@ _PATTERNS = (
     (re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]+"), r"\1 " + MASK),
     (re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"), MASK),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*"), MASK),
-    (re.compile(r"(?i)\b(MODELMUX_API_KEYS?=)\S+"), r"\1" + MASK),
+    # The server's key list: only values that look like keys, not "$(...)" hints.
+    (re.compile(r"\b(MODELMUX_API_KEYS=)[A-Za-z0-9_,-]{16,}"), r"\1" + MASK),
 )
 
 _secrets: set[str] = set()

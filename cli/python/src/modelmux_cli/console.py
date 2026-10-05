@@ -97,6 +97,15 @@ class Console:
         if hint:
             self._line(self.err, f"  {self._style('dim', hint)}")
 
+    def note(self, text: str) -> None:
+        """A hint on stderr, so stdout stays clean for piping (``config > file``)."""
+        self._line(self.err, f"{self._style('dim', self._symbol('step'))} {text}")
+
+    def reveal(self, text: str) -> None:
+        """Print WITHOUT redaction. Only for an explicit user request to see a secret."""
+        self.out.write(text + "\n")
+        self.out.flush()
+
     def detail(self, text: str) -> None:
         """Only shown with --verbose."""
         if self.verbose:

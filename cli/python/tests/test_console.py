@@ -98,7 +98,7 @@ def test_output_is_redacted() -> None:
 @pytest.mark.parametrize(
     "text",
     ["sk-ant-api03-abcdefghijklmnop", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig_value-1",
-     "MODELMUX_API_KEYS=abc123"],
+     "MODELMUX_API_KEYS=abcdefghijklmnop1234"],
 )  # fmt: skip
 def test_redact_patterns(text: str) -> None:
     assert MASK in redact(f"x {text} y")
@@ -108,3 +108,9 @@ def test_redact_patterns(text: str) -> None:
 def test_short_values_are_not_registered() -> None:
     register_secret("abc")
     assert redact("abc") == "abc"
+
+
+@pytest.mark.usefixtures("clean_secrets")
+def test_hints_are_not_redacted() -> None:
+    hint = "export MODELMUX_API_KEY=$(modelmux key show)"
+    assert redact(hint) == hint

@@ -12,7 +12,8 @@ import traceback
 from collections.abc import Callable, Sequence
 
 from modelmux_cli import __version__
-from modelmux_cli.commands import basic
+from modelmux_cli.clientconfig import TARGETS
+from modelmux_cli.commands import basic, config_cmd
 from modelmux_cli.commands import login as login_command
 from modelmux_cli.commands import logout as logout_command
 from modelmux_cli.commands import up as up_command
@@ -78,10 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
     logout.set_defaults(handler=logout_command.run)
 
     config = sub.add_parser("config", help="print ready-to-paste client config")
-    config.add_argument("target", choices=["litellm", "openai-python", "langchain", "curl", "env"])
+    config.add_argument("target", choices=TARGETS)
     config.add_argument("--provider", choices=providers)
     config.add_argument("--reveal-key", action="store_true", help="include the real API key")
-    config.set_defaults(handler=_not_yet("config"))
+    config.set_defaults(handler=config_cmd.config)
 
     doctor = sub.add_parser("doctor", help="diagnose common problems")
     doctor.set_defaults(handler=_not_yet("doctor"))
@@ -93,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     key = sub.add_parser("key", help="the API key clients use to call ModelMux")
     key_sub = key.add_subparsers(dest="key_command", metavar="<action>", required=True)
     key_show = key_sub.add_parser("show", help="print the API key")
-    key_show.set_defaults(handler=_not_yet("key show"))
+    key_show.set_defaults(handler=config_cmd.key_show)
     return parser
 
 
