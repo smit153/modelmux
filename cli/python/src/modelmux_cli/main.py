@@ -13,6 +13,8 @@ from collections.abc import Callable, Sequence
 
 from modelmux_cli import __version__
 from modelmux_cli.commands import basic
+from modelmux_cli.commands import login as login_command
+from modelmux_cli.commands import logout as logout_command
 from modelmux_cli.commands import up as up_command
 from modelmux_cli.console import Console
 from modelmux_cli.errors import EXIT_FAILURE, EXIT_INTERRUPTED, CliError
@@ -67,12 +69,13 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--method", help="login method (see the provider's options)")
     login.add_argument("--no-browser", action="store_true", help="do not open a browser")
     login.add_argument("--raw", action="store_true", help="show the provider's raw output")
-    login.set_defaults(handler=_not_yet("login"))
+    login.add_argument("--force", action="store_true", help="log in again even if logged in")
+    login.set_defaults(handler=login_command.run)
 
     logout = sub.add_parser("logout", help="remove a provider's saved login")
     logout.add_argument("provider", choices=providers)
     logout.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
-    logout.set_defaults(handler=_not_yet("logout"))
+    logout.set_defaults(handler=logout_command.run)
 
     config = sub.add_parser("config", help="print ready-to-paste client config")
     config.add_argument("target", choices=["litellm", "openai-python", "langchain", "curl", "env"])

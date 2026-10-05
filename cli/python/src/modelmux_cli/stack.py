@@ -144,10 +144,19 @@ class Stack:
 
     # ------------------------------------------------------------ helper containers
 
-    def helper_args(self, provider: Provider, image: str, command: tuple[str, ...]) -> list[str]:
-        """``docker run`` arguments for a short-lived, hardened helper container."""
+    def helper_args(
+        self,
+        provider: Provider,
+        image: str,
+        command: tuple[str, ...],
+        extra: tuple[str, ...] = (),
+    ) -> list[str]:
+        """``docker run`` arguments for a short-lived, hardened helper container.
+
+        ``extra`` adds run options such as ``-it`` or ``--name``.
+        """
         return [
-            "run", "--rm",
+            "run", "--rm", *extra,
             "--read-only", "--tmpfs", CONTAINER_TMP,
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
             "--user", "10001:10001",

@@ -30,6 +30,12 @@ class FakeDocker:
         self.passthrough_calls: list[tuple[str, ...]] = []
         self.rules: list[tuple[Matcher, Response]] = []
         self.server_version = "29.8.0"
+        self.pty_calls: list[tuple[str, ...]] = []
+        self.pty_output: bytes = b""
+        self.pty_result: int | BaseException = 0
+        self.pty_extra: list[bytes] = []
+        self.on_interactive: Callable[[], None] = lambda: None
+        self.passthrough_result: int | BaseException = 0
 
     def when(self, *prefix: str, returns: Response = (0, "", "")) -> FakeDocker:
         self.rules.insert(0, (lambda args: args[: len(prefix)] == prefix, returns))
@@ -58,7 +64,23 @@ class FakeDocker:
 
     def passthrough(self, *args: str, timeout: float | None = None) -> int:
         self.passthrough_calls.append(args)
-        return 0
+        if isinstance(self.passthrough_result, BaseException):
+            raise self.passthrough_result
+        self.on_interactive()
+        return self.passthrough_result
+
+    def run_pty(
+        self, *args: str, on_output: Callable[[bytes], bytes | None], timeout: float, **_: Any
+    ) -> int:
+        """Replays ``pty_output`` byte by byte through ``on_output``."""
+        self.pty_calls.append(args)
+        for i in range(len(self.pty_output)):
+            if extra := on_output(self.pty_output[i : i + 1]):
+                self.pty_extra.append(extra)
+        if isinstance(self.pty_result, BaseException):
+            raise self.pty_result
+        self.on_interactive()
+        return self.pty_result
 
     def check_available(self) -> str:
         self.calls.append(("version",))
