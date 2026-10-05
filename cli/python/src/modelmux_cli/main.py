@@ -7,10 +7,13 @@ This module only parses arguments and reports errors. Each command lives in
 from __future__ import annotations
 
 import argparse
+import sys
 import traceback
 from collections.abc import Callable, Sequence
 
 from modelmux_cli import __version__
+from modelmux_cli.commands import basic
+from modelmux_cli.commands import up as up_command
 from modelmux_cli.console import Console
 from modelmux_cli.errors import EXIT_FAILURE, EXIT_INTERRUPTED, CliError
 from modelmux_cli.providers import load_providers
@@ -41,19 +44,23 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument(
         "providers", nargs="*", metavar="provider", help=f"any of: {', '.join(providers)}"
     )
-    up.set_defaults(handler=_not_yet("up"))
+    up.add_argument("--image", metavar="REF", help="server image to run (remembered)")
+    up.add_argument(
+        "--port", action="append", metavar="PROVIDER=PORT", help="local port (remembered)"
+    )
+    up.set_defaults(handler=up_command.run)
 
     down = sub.add_parser("down", help="stop ModelMux (logins are kept)")
-    down.set_defaults(handler=_not_yet("down"))
+    down.set_defaults(handler=basic.down)
 
     logs = sub.add_parser("logs", help="show server logs")
     logs.add_argument("provider", nargs="?", choices=providers)
     logs.add_argument("-f", "--follow", action="store_true", help="keep streaming new lines")
     logs.add_argument("--tail", type=int, default=100, metavar="N", help="lines to show (100)")
-    logs.set_defaults(handler=_not_yet("logs"))
+    logs.set_defaults(handler=basic.logs)
 
     status = sub.add_parser("status", help="what is running, logged in and healthy")
-    status.set_defaults(handler=_not_yet("status"))
+    status.set_defaults(handler=basic.status)
 
     login = sub.add_parser("login", help="log a provider in (guided)")
     login.add_argument("provider", choices=providers)
@@ -88,10 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    console = Console()
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # Until arguments are parsed, honour --verbose from the raw command line.
+    console = Console(verbose="-v" in raw or "--verbose" in raw)
     try:
         parser = build_parser()
-        args = parser.parse_args(argv)
+        args = parser.parse_args(raw)
         console = Console(verbose=args.verbose, color=False if args.no_color else None)
         handler: Handler = args.handler
         return handler(args, console)
