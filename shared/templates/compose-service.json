@@ -1,0 +1,12 @@
+{
+  "read_only": true,
+  "tmpfs": ["/tmp:rw,noexec,nosuid,nodev,size=512m"],
+  "cap_drop": ["ALL"],
+  "security_opt": ["no-new-privileges:true"],
+  "user": "10001:10001",
+  "pids_limit": 256,
+  "mem_limit": "2g",
+  "cpus": 2,
+  "restart": "on-failure:3",
+  "labels": {"io.modelmux.managed": "true"}
+}

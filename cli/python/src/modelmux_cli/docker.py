@@ -211,6 +211,22 @@ class Docker:
             raise classify(result.stderr, args[0] if args else "", self.platform)
         return result
 
+    def passthrough(self, *args: str, timeout: float | None = None) -> int:
+        """Run ``docker <args>`` attached to this terminal (logs -f, interactive login).
+
+        Output is not captured, so it is the user's own Docker output.
+        """
+        argv = self._argv(args)
+        self.console.detail("$ docker " + shlex.join(args))
+        try:
+            return self._runner(argv, timeout=timeout, check=False).returncode
+        except FileNotFoundError:
+            raise DockerError(
+                "Docker is not installed.", hint=_install_hint(self.platform)
+            ) from None
+        except subprocess.TimeoutExpired:
+            raise DockerError("Docker did not finish in time.", hint="Try again.") from None
+
     def compose(self, project: str, file: Path, *args: str, **kwargs: Any) -> Result:
         return self.run("compose", "-p", project, "-f", str(file), *args, **kwargs)
 

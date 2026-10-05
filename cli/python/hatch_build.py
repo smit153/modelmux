@@ -12,7 +12,7 @@ from typing import Any
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
-PARTS = ("providers", "schema")
+PARTS = ("providers", "schema", "templates")
 
 
 class SharedDataHook(BuildHookInterface):  # type: ignore[type-arg]
