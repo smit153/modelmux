@@ -1,0 +1,35 @@
+{
+  "$schema": "../schema/provider.schema.json",
+  "schema_version": 1,
+  "name": "codex",
+  "display_name": "OpenAI Codex",
+  "driver": "codex",
+  "default_port": 8102,
+  "volume": "codex-home",
+  "home": "/home/modelmux/driver-home",
+  "example_model": "gpt-6.1-sol",
+  "login": {
+    "default_method": "device",
+    "methods": {
+      "device": {
+        "description": "ChatGPT account: open a link and enter the one-time code shown",
+        "command": ["codex", "login", "--device-auth"]
+      },
+      "api-key": {
+        "description": "OpenAI API key, read from your terminal without echo",
+        "command": ["codex", "login", "--with-api-key"],
+        "secret_stdin": "OpenAI API key"
+      }
+    },
+    "link_pattern": "https://\\S+",
+    "timeout_seconds": 900
+  },
+  "status": {
+    "command": ["codex", "login", "status"],
+    "logged_in_exit_code": 0
+  },
+  "logout": {
+    "command": ["codex", "logout"]
+  },
+  "docs_url": "https://developers.openai.com/codex/cli"
+}

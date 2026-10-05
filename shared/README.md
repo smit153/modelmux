@@ -1,0 +1,20 @@
+# Shared data
+
+Language-neutral files used by every ModelMux CLI implementation (Python
+today, possibly Node later). Implementations share this **data**, never code.
+
+| Path | What |
+|---|---|
+| `providers/<name>.json` | One file per provider: how to log in, check and log out, its login volume, default port and example model. Adding a provider means adding a file here (and a driver in the server). |
+| `schema/provider.schema.json` | JSON Schema (Draft 2020-12) that every provider file must satisfy. Checked in CI. |
+| `templates/` | Text templates the CLIs fill in (the compose file, client config snippets). |
+
+Rules for provider files:
+
+- Commands are argument arrays run inside a short-lived helper container with
+  the provider's own login volume mounted at `home`. They are never shell
+  strings, and their items are restricted to plain characters by the schema.
+- `volume` must be unique per provider: logins are never shared.
+- `link_pattern` is a regular expression that finds the login link in the
+  provider CLI's output; if it ever fails, the CLI falls back to showing the
+  raw output.

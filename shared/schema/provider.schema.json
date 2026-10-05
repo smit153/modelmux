@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/smit153/modelmux/shared/schema/provider.schema.json",
+  "title": "ModelMux provider definition",
+  "description": "How the ModelMux CLI runs, logs in and checks one provider. Language-neutral: every CLI implementation reads these files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "name", "display_name", "driver", "default_port", "volume", "home",
+    "example_model", "login", "status", "logout"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "name": {"$ref": "#/$defs/identifier", "description": "Used on the command line: modelmux login <name>"},
+    "display_name": {"type": "string", "minLength": 1, "maxLength": 64},
+    "driver": {"$ref": "#/$defs/identifier", "description": "The server's MODELMUX_DRIVER value"},
+    "default_port": {"type": "integer", "minimum": 1024, "maximum": 65535},
+    "volume": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,62}$",
+      "description": "Login volume name, unique per provider (prefixed with the compose project name)"
+    },
+    "home": {"type": "string", "pattern": "^/", "description": "HOME inside the container; the volume is mounted here"},
+    "example_model": {"type": "string", "minLength": 1, "maxLength": 64},
+    "login": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_method", "methods", "link_pattern", "timeout_seconds"],
+      "properties": {
+        "default_method": {"$ref": "#/$defs/identifier"},
+        "methods": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["description", "command"],
+            "properties": {
+              "description": {"type": "string", "minLength": 1},
+              "command": {"$ref": "#/$defs/command"},
+              "secret_stdin": {
+                "type": "string",
+                "minLength": 1,
+                "description": "If set, prompt for this secret without echo and pass it on stdin"
+              }
+            }
+          }
+        },
+        "link_pattern": {"type": "string", "minLength": 1, "description": "Regex that finds the login link in the CLI's output"},
+        "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 3600}
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "logged_in_exit_code"],
+      "properties": {
+        "command": {"$ref": "#/$defs/command"},
+        "logged_in_exit_code": {"type": "integer"}
+      }
+    },
+    "logout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {"command": {"$ref": "#/$defs/command"}}
+    },
+    "docs_url": {"type": "string", "pattern": "^https://"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "description": "argv run inside a helper container; the first item is the entrypoint. Never a shell string.",
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9._=/-]+$"}
+    }
+  }
+}

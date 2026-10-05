@@ -1,0 +1,34 @@
+{
+  "$schema": "../schema/provider.schema.json",
+  "schema_version": 1,
+  "name": "claude",
+  "display_name": "Claude Code",
+  "driver": "claude",
+  "default_port": 8101,
+  "volume": "claude-home",
+  "home": "/home/modelmux/driver-home",
+  "example_model": "sonnet",
+  "login": {
+    "default_method": "browser",
+    "methods": {
+      "browser": {
+        "description": "Claude subscription: open a link, sign in, paste the code back",
+        "command": ["claude", "auth", "login"]
+      },
+      "console": {
+        "description": "Anthropic Console (API billing): open a link, sign in, paste the code back",
+        "command": ["claude", "auth", "login", "--console"]
+      }
+    },
+    "link_pattern": "https://\\S+",
+    "timeout_seconds": 600
+  },
+  "status": {
+    "command": ["claude", "auth", "status"],
+    "logged_in_exit_code": 0
+  },
+  "logout": {
+    "command": ["claude", "auth", "logout"]
+  },
+  "docs_url": "https://docs.anthropic.com/en/docs/claude-code"
+}
