@@ -14,21 +14,16 @@ from collections.abc import Callable, Sequence
 from modelmux_cli import __version__
 from modelmux_cli.clientconfig import TARGETS
 from modelmux_cli.commands import basic, config_cmd
+from modelmux_cli.commands import doctor as doctor_command
 from modelmux_cli.commands import login as login_command
 from modelmux_cli.commands import logout as logout_command
 from modelmux_cli.commands import up as up_command
+from modelmux_cli.commands import upgrade as upgrade_command
 from modelmux_cli.console import Console
 from modelmux_cli.errors import EXIT_FAILURE, EXIT_INTERRUPTED, CliError
 from modelmux_cli.providers import load_providers
 
 Handler = Callable[[argparse.Namespace, Console], int]
-
-
-def _not_yet(command: str) -> Handler:
-    def handler(_args: argparse.Namespace, _console: Console) -> int:
-        raise CliError(f"'modelmux {command}' is not available yet.", hint="Coming soon.")
-
-    return handler
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,11 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     config.set_defaults(handler=config_cmd.config)
 
     doctor = sub.add_parser("doctor", help="diagnose common problems")
-    doctor.set_defaults(handler=_not_yet("doctor"))
+    doctor.set_defaults(handler=doctor_command.run)
 
     upgrade = sub.add_parser("upgrade", help="run the image matching this CLI version")
     upgrade.add_argument("--image", metavar="REF", help="use a different image (advanced)")
-    upgrade.set_defaults(handler=_not_yet("upgrade"))
+    upgrade.set_defaults(handler=upgrade_command.run)
 
     key = sub.add_parser("key", help="the API key clients use to call ModelMux")
     key_sub = key.add_subparsers(dest="key_command", metavar="<action>", required=True)
