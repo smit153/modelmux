@@ -5,7 +5,7 @@ are validated at startup; an invalid value stops the process with a message
 that names the setting but never prints its value. In Docker, put them in
 `docker/.env` (see [SETUP.md](SETUP.md)).
 
-> `tests/unit/test_docs.py` fails if a setting is missing from this page.
+> `server/tests/unit/test_docs.py` fails if a setting is missing from this page.
 
 ## Driver
 

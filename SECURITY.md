@@ -31,6 +31,8 @@ acknowledgement within a few days.
 
 ## Threat model
 
+Test names and paths in the last column are relative to `server/`.
+
 | Threat | Mitigation | Verified by |
 |---|---|---|
 | Prompt injection makes the CLI run tools, commands or read files | All tools disabled by CLI flags (Claude: `--tools ""`, `--disallowedTools` for every built-in, `--restricted`, `--safe-mode`, empty strict MCP config, `--permission-mode dontAsk --permission-prompts none`; Codex: `--sandbox read-only`, approval `never`, 25 tool features disabled, web search disabled, no MCP) · **fail-closed tripwire** kills the process group on any tool event · empty private workspace · read-only container · egress restriction | `tests/security/test_api_security.py`, `tests/unit/test_*_parser.py`, `tests/integration/test_*_driver.py` |

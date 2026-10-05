@@ -168,6 +168,7 @@ $C up -d modelmux-claude && $C logs modelmux-claude | grep -E "probe_ok|probe_fa
 ## 10. Development (no Docker needed)
 
 ```bash
+cd server                                        # the server's Python project
 uv sync                                          # create .venv from uv.lock
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                                      # strict

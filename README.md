@@ -177,9 +177,23 @@ egress to the provider's domains. Details and the threat model:
   features, config keys, auth failure). A successful Codex response has not
   been observed live; its event shapes follow the Codex source.
 
+## Repository layout
+
+```
+modelmux/
+├── server/     # the ModelMux server (Python 3.12, FastAPI): src/, tests/, pyproject.toml
+├── docker/     # Dockerfile, compose example, pinned CLI lockfile
+├── docs/       # setup, commands, architecture, configuration, errors, drivers
+└── .github/    # CI: lint, types, tests, image build, vulnerability scan, SBOM
+```
+
+The repository is laid out so more components (such as a CLI in several
+languages) can live next to the server, sharing data rather than code.
+
 ## Development
 
 ```bash
+cd server
 uv sync                                     # Python 3.12, locked dependencies
 uv run ruff check . && uv run ruff format --check .
 uv run mypy

@@ -18,6 +18,9 @@ flowchart TD
 
 ## Layers and their rules
 
+All server code lives under `server/src/modelmux/`; test paths below are
+relative to `server/`.
+
 | Package | Owns | Must not |
 |---|---|---|
 | `api/` | HTTP: routes, auth, middleware, request schemas, error rendering, SSE framing | know anything CLI-specific |

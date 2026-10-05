@@ -71,7 +71,7 @@ before the action finishes.
 
 ## A complete minimal example
 
-This is the driver used in the test suite (`tests/fakes/echo_driver.py`). It
+This is the driver used in the test suite (`server/tests/fakes/echo_driver.py`). It
 treats every stdout line as the answer:
 
 ```python
@@ -113,7 +113,7 @@ class EchoDriver(Driver):
 ```
 
 A real driver's probe should look like the Claude driver's
-(`src/modelmux/drivers/claude/driver.py`):
+(`server/src/modelmux/drivers/claude/driver.py`):
 
 ```python
 async def probe(self, ctx: ProbeContext) -> ProbeResult:
@@ -127,7 +127,7 @@ async def probe(self, ctx: ProbeContext) -> ProbeResult:
 
 ## Registering the driver
 
-Built-in drivers are listed in `src/modelmux/drivers/registry.py`. A
+Built-in drivers are listed in `server/src/modelmux/drivers/registry.py`. A
 third-party package registers an entry point instead:
 
 ```toml
@@ -148,15 +148,15 @@ model list with valid, unique IDs.
 
 The test suite gives you most of what you need:
 
-- **Record real output** as JSONL fixtures under `tests/fixtures/<driver>/`
+- **Record real output** as JSONL fixtures under `server/tests/fixtures/<driver>/`
   (plain text, an error, and, carefully, one tool attempt), and hand-write
   the rest from the CLI's documentation or source. Note which are which in a
   `README.md` next to them.
 - **Parser tests** over the fixtures, including garbage lines and deep nesting.
-- **The fake CLI** (`tests/fakes/fake_cli.py`) can replay any fixture
+- **The fake CLI** (`server/tests/fakes/fake_cli.py`) can replay any fixture
   (`FAKE_SCENARIO=fixture`, `FAKE_FIXTURE=...`), hang, flood output, ignore
   SIGTERM, leave children behind, and record its argv and environment. Teach it
   your CLI's `--version`, "unknown flag" and "no input" behaviour for probe tests.
-- **The security suite** (`tests/security/test_api_security.py`) is
+- **The security suite** (`server/tests/security/test_api_security.py`) is
   parametrized over drivers: add yours to `driver_name` and to the per-driver
-  maps in `tests/helpers.py`.
+  maps in `server/tests/helpers.py`.

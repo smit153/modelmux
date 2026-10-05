@@ -10,7 +10,7 @@ Every error has the OpenAI shape and carries the `X-Request-ID` header:
 details such as stderr, exit codes, paths, argv and environment are only
 written to the logs, keyed by the request ID.
 
-> `tests/unit/test_docs.py` fails if an error code is missing from this page.
+> `server/tests/unit/test_docs.py` fails if an error code is missing from this page.
 
 | Code | HTTP | OpenAI `type` | Retry? | When |
 |---|---|---|---|---|
