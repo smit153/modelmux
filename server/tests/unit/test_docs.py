@@ -10,7 +10,7 @@ import pytest
 from modelmux import errors
 from modelmux.config import Settings
 
-DOCS = Path(__file__).resolve().parents[2] / "docs"
+DOCS = Path(__file__).resolve().parents[3] / "docs"
 
 
 def error_codes() -> list[str]:

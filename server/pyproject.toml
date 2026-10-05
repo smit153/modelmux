@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Expose AI coding CLIs as a secure, OpenAI-compatible Chat Completions API"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",
