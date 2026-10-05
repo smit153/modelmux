@@ -4,6 +4,26 @@ Every command needed to build, run, test and operate ModelMux, in order.
 Explanations are in [SETUP.md](SETUP.md). Run everything from the repository
 root unless a step says otherwise.
 
+## With the `modelmux` CLI
+
+```bash
+pipx install modelmux-cli                 # or: uvx modelmux-cli <command>
+modelmux up [claude|codex] [--image REF] [--port claude=9101]
+modelmux login claude [--method console] [--no-browser] [--raw] [--force]
+modelmux login codex  [--method api-key]
+modelmux status
+modelmux logs claude -f
+modelmux config litellm|openai-python|langchain|curl|env [--provider claude] [--reveal-key]
+modelmux key show
+modelmux doctor
+modelmux upgrade
+modelmux logout codex [--yes]
+modelmux down
+```
+
+Details: [CLI.md](CLI.md). The rest of this page does everything by hand with
+Docker Compose.
+
 ```bash
 C="docker compose -f docker/compose.example.yaml"   # used throughout this page
 ```

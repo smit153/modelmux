@@ -15,7 +15,7 @@
 Claude Code and Codex, used purely as text-in / text-out models.<br>
 No tools, no shell, no filesystem: the CLI only ever thinks, it never acts.
 
-[Setup guide](docs/SETUP.md) · [Commands](docs/COMMANDS.md) · [Security](SECURITY.md) · [Architecture](docs/ARCHITECTURE.md) · [Configuration](docs/CONFIGURATION.md) · [Errors](docs/ERRORS.md) · [Write a driver](docs/WRITING_A_DRIVER.md)
+[CLI](docs/CLI.md) · [Setup guide](docs/SETUP.md) · [Commands](docs/COMMANDS.md) · [Security](SECURITY.md) · [Architecture](docs/ARCHITECTURE.md) · [Configuration](docs/CONFIGURATION.md) · [Errors](docs/ERRORS.md) · [Write a driver](docs/WRITING_A_DRIVER.md)
 
 </div>
 
@@ -55,22 +55,19 @@ safely, report accurately.
 
 ## Quick start
 
-Full step-by-step instructions (including logging the CLIs in) are in
-**[docs/SETUP.md](docs/SETUP.md)**; every command in one place is in
-**[docs/COMMANDS.md](docs/COMMANDS.md)**.
+With the `modelmux` CLI (needs Docker and Python 3.10+):
 
 ```bash
-git clone https://github.com/smit153/modelmux.git && cd modelmux
-cp docker/.env.example docker/.env          # set MODELMUX_API_KEYS
-docker compose -f docker/compose.example.yaml build
-
-# Log the CLI in, once, inside its own volume (see docs/SETUP.md)
-docker compose -f docker/compose.example.yaml run --rm \
-  -e HOME=/home/modelmux/driver-home --entrypoint claude modelmux-claude auth login
-
-docker compose -f docker/compose.example.yaml up -d modelmux-claude
-curl -s http://127.0.0.1:8101/health/ready
+pipx install modelmux-cli          # or run it without installing: uvx modelmux-cli
+modelmux up                        # set up everything, start logged-in providers
+modelmux login claude              # guided login (opens your browser), then a real test
+modelmux config litellm            # ready-to-paste config for your tools
 ```
+
+`modelmux status`, `logs`, `doctor`, `upgrade` and `logout` do what they say;
+see **[docs/CLI.md](docs/CLI.md)**. To run the containers yourself with
+Docker Compose instead, follow **[docs/SETUP.md](docs/SETUP.md)**; every
+command is collected in **[docs/COMMANDS.md](docs/COMMANDS.md)**.
 
 ## Using it
 
@@ -181,25 +178,36 @@ egress to the provider's domains. Details and the threat model:
 
 ```
 modelmux/
-├── server/     # the ModelMux server (Python 3.12, FastAPI): src/, tests/, pyproject.toml
-├── docker/     # Dockerfile, compose example, pinned CLI lockfile
-├── docs/       # setup, commands, architecture, configuration, errors, drivers
-└── .github/    # CI: lint, types, tests, image build, vulnerability scan, SBOM
+├── server/        # the ModelMux server (Python 3.12, FastAPI), shipped as a Docker image
+├── cli/
+│   └── python/    # the modelmux CLI (modelmux-cli on PyPI, Python 3.10+, no dependencies)
+├── shared/        # language-neutral data the CLIs share: providers, templates, release pin
+├── docker/        # Dockerfile, compose example, pinned AI CLI lockfile
+├── docs/          # CLI, setup, commands, architecture, configuration, errors, drivers, releasing
+└── .github/       # CI (server, CLI on Linux/macOS/Windows, image scan) and the release workflow
 ```
 
-The repository is laid out so more components (such as a CLI in several
-languages) can live next to the server, sharing data rather than code.
+Components share **data** (`shared/`), never code, so a CLI in another
+language (for example a Node launcher) can be added next to `cli/python/`.
 
 ## Development
 
 ```bash
+# Server
 cd server
 uv sync                                     # Python 3.12, locked dependencies
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pytest                               # ~800 tests, fake CLIs, no network
 LIVE_DRIVER_HOME=$HOME uv run pytest -m live tests/live   # real Claude (costs a few requests)
+
+# CLI
+cd cli/python
+uv sync                                     # Python 3.10+, no runtime dependencies
+uv run ruff check . && uv run mypy && uv run pytest
 ```
+
+Releases: see **[docs/RELEASING.md](docs/RELEASING.md)**.
 
 ## License
 

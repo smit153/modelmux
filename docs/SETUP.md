@@ -4,6 +4,23 @@ This guide takes you from a fresh machine to a running, locked-down ModelMux
 container that answers OpenAI-style requests. Every command is also listed,
 without the explanations, in [COMMANDS.md](COMMANDS.md).
 
+## The easy way: the `modelmux` CLI
+
+If you have Docker and Python 3.10+, the CLI does every step below for you:
+
+```bash
+pipx install modelmux-cli      # or: uvx modelmux-cli
+modelmux up                    # API key, settings, image, login volumes
+modelmux login claude          # guided login, then a real test
+modelmux config litellm        # config for your tools
+```
+
+See [CLI.md](CLI.md). The rest of this guide does the same by hand with
+Docker Compose, which is useful if you want full control or cannot install
+the CLI.
+
+## By hand with Docker Compose
+
 ```
   1. Prerequisites      →  Docker, git (and uv only for development)
   2. Get the code       →  git clone

@@ -104,6 +104,32 @@ validate against the tool's JSON Schema (Draft 2020-12) and size limit, and
 `tool_choice` / `parallel_tool_calls` must be respected. Invalid output gets
 one repair run that quotes the specific error; after that, `502`.
 
+## The CLI (`cli/python`)
+
+The `modelmux` CLI drives Docker on the user's machine; it never imports the
+server's code. They share **data** in `shared/` (provider definitions, the
+compose hardening template, client config templates, and `release.json` with
+the pinned image), so another implementation (for example Node) can read the
+same files.
+
+```
+modelmux up ──▶ docker compose (generated compose.yaml: hardened services,
+                 external login volumes, ports on 127.0.0.1, env_file secrets)
+modelmux login ──▶ docker run --rm -it <hardened helper> <provider login cmd>
+                   (pseudo-terminal relay on POSIX: link detection, browser)
+modelmux status/doctor ──▶ docker + HTTP to 127.0.0.1 (/health/ready, /v1/models)
+```
+
+- `docker.py` is the only module that starts processes: argument lists only,
+  a timeout on every call, Docker errors turned into friendly messages.
+- Login volumes are external (`modelmux_<provider>-home`): no compose command
+  can delete them; only `modelmux logout` does.
+- Restart policy is `on-failure:3`: with the server's fail-fast startup, an
+  expired login stops the container instead of looping; `status` and
+  `doctor` explain why.
+- Each CLI release pins the server image built in the same release by digest
+  (`shared/release.json`); `upgrade` runs that image.
+
 ## Decisions (differences from the original plan)
 
 Recorded so the reasoning is not lost. Each was agreed during the build.

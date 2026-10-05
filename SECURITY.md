@@ -95,6 +95,26 @@ distribution has not fixed yet are reviewed on each release. Exceptions go in
 `.trivyignore`, each with a justification and a review date. A CycloneDX SBOM
 is attached to every CI run.
 
+## The `modelmux` CLI
+
+The CLI controls Docker on the user's machine, so it is kept small and strict:
+
+- **No dependencies** beyond the Python standard library.
+- **No shells**: one module starts processes (`docker`), always with argument
+  lists and timeouts; a test scans the source to enforce it.
+- **Secrets**: the client API key is generated with `secrets`, written
+  atomically with mode `0600` (directory `0700`), never printed unless the
+  user runs `modelmux key show` or `config --reveal-key`, and masked in all
+  other output including `--verbose`. Login keystrokes, pasted codes and
+  provider API keys are relayed to the provider CLI and never stored or logged.
+- **Containers**: the generated compose file and every helper container are
+  read-only, non-root, without capabilities and with `no-new-privileges`;
+  ports are published on `127.0.0.1` only; there are no host-folder mounts and
+  never the Docker socket. Each provider's login has its own volume.
+- **Images**: each CLI release runs the image built in the same release,
+  pinned by digest, never `latest`. Releases publish with PyPI trusted
+  publishing (no stored tokens) and attach provenance and an SBOM.
+
 ## Known limitations
 
 - ModelMux cannot see network traffic the CLI makes to its provider;
