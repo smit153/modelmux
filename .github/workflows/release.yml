@@ -1,0 +1,210 @@
+name: release
+
+# A tag vX.Y.Z releases everything with one version:
+#   1. check the tag matches server, CLI and shared/release.json
+#   2. build the multi-arch server image and push it to GHCR (no "latest" tag)
+#   3. scan it, attach provenance, produce an SBOM
+#   4. pin the image digest into the CLI and build the CLI
+#   5. publish to TestPyPI and smoke-test the install
+#   6. publish to PyPI (environment "pypi": add required reviewers to approve)
+#   7. create the GitHub release
+# Run it manually (workflow_dispatch) with dry_run=true to build and test
+# everything without pushing or publishing.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and test only; push and publish nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/smit153/modelmux
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        name: Tag, server, CLI and release data agree
+        run: |
+          server=$(sed -n 's/^version = "\(.*\)"$/\1/p' server/pyproject.toml)
+          cli=$(sed -n 's/^version = "\(.*\)"$/\1/p' cli/python/pyproject.toml)
+          data=$(python3 -c 'import json; print(json.load(open("shared/release.json"))["version"])')
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then tag="${GITHUB_REF_NAME#v}"; else tag="$cli"; fi
+          echo "tag=$tag server=$server cli=$cli release.json=$data"
+          if [ "$tag" != "$server" ] || [ "$tag" != "$cli" ] || [ "$tag" != "$data" ]; then
+            echo "::error::Versions differ. Bump all of them together (see docs/RELEASING.md)."
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: env.DRY_RUN != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build (amd64 + arm64) and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.DRY_RUN != 'true' }}
+          tags: ${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}
+          build-args: VERSION=${{ needs.version.outputs.version }}
+          provenance: mode=max
+          sbom: true
+      - name: Vulnerability scan (fail on fixable HIGH/CRITICAL)
+        if: env.DRY_RUN != 'true'
+        run: |
+          docker run --rm -v "$PWD/.trivyignore:/.trivyignore:ro" aquasec/trivy:latest image \
+            --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /.trivyignore \
+            --scanners vuln --exit-code 1 \
+            "${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
+      - name: SBOM (CycloneDX)
+        if: env.DRY_RUN != 'true'
+        run: |
+          docker run --rm -v "$PWD:/work" aquasec/trivy:latest image --format cyclonedx \
+            --output /work/sbom.cdx.json "${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
+      - name: Build provenance attestation
+        if: env.DRY_RUN != 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@v4
+        if: env.DRY_RUN != 'true'
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+  cli:
+    needs: [version, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Pin the server image by digest
+        env:
+          DIGEST: ${{ needs.image.outputs.digest }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, re
+          digest = os.environ["DIGEST"]
+          if not digest and os.environ.get("DRY_RUN") == "true":
+              digest = "sha256:" + "0" * 64  # nothing was pushed in a dry run
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit(f"unexpected digest: {digest!r}")
+          path = "shared/release.json"
+          data = json.load(open(path))
+          data["image"] = f"{os.environ['IMAGE_NAME']}@{digest}"
+          open(path, "w").write(json.dumps(data, indent=2) + "\n")
+          print(data)
+          EOF
+      - name: Test and build the CLI
+        working-directory: cli/python
+        run: |
+          uv sync --locked
+          uv run pytest -q
+          uv build -o ../../dist
+      - name: The built CLI carries the pinned image
+        run: |
+          uvx --isolated --from "$(ls dist/*.whl)" python -c \
+            "from modelmux_cli.release import pinned_image; i = pinned_image(); print(i); assert i and '@sha256:' in i"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    needs: [version, cli]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/modelmux-cli/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+      - uses: astral-sh/setup-uv@v6
+      - name: Install from TestPyPI and run it
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if uvx --isolated --index-url https://test.pypi.org/simple/ \
+                "modelmux-cli==${VERSION}" --version; then exit 0; fi
+            sleep 20
+          done
+          exit 1
+
+  pypi:
+    needs: [version, testpypi]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/modelmux-cli/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: [version, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets/
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --verify-tag \
+            --title "ModelMux ${VERSION}" \
+            --notes "Install: pipx install modelmux-cli==${VERSION}  ·  Image: ${IMAGE_NAME}:${VERSION}" \
+            assets/dist/* assets/sbom/sbom.cdx.json
