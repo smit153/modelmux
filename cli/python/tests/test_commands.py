@@ -6,11 +6,11 @@ import stat
 from pathlib import Path
 
 import pytest
-from tests.conftest import FakeDocker
 
 from modelmux_cli import _pinned, health
 from modelmux_cli.commands import up as up_module
 from modelmux_cli.main import main
+from tests.conftest import FakeDocker
 
 RUNNING = '{"Service": "modelmux-claude", "State": "running", "Health": "", "ExitCode": 0}'
 EXITED = '{"Service": "modelmux-claude", "State": "exited", "Health": "", "ExitCode": 1}'

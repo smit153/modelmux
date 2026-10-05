@@ -69,7 +69,7 @@ max-returns = 10
 "pty".msg = "Run commands only via modelmux_cli.docker."
 
 [tool.ruff.lint.per-file-ignores]
-"src/modelmux_cli/docker.py" = ["TID251", "S603"]
+"src/modelmux_cli/docker.py" = ["TID251", "S603", "S606"]
 "tests/**" = ["S101", "S105", "S106", "S108", "TID251", "S603", "S607", "PLR0917"]
 
 # ---------------------------------------------------------------- mypy

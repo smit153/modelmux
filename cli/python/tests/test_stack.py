@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-from tests.conftest import FakeDocker
 
 from modelmux_cli import _pinned
 from modelmux_cli.config import Config
@@ -19,6 +18,7 @@ from modelmux_cli.stack import (
     volume_name,
     write_compose,
 )
+from tests.conftest import FakeDocker
 
 PROVIDERS = load_providers()
 CLAUDE = PROVIDERS["claude"]

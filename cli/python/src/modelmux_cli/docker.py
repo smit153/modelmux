@@ -8,12 +8,14 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -135,6 +137,63 @@ def classify(stderr: str, command: str, platform: str | None = None) -> DockerEr
     )
 
 
+@contextlib.contextmanager
+def _raw_terminal(in_fd: int, master: int) -> Iterator[None]:
+    """Give the pseudo-terminal our window size and put our terminal in raw mode."""
+    if not os.isatty(in_fd):
+        yield
+        return
+    import fcntl  # noqa: PLC0415 - POSIX only
+    import termios  # noqa: PLC0415
+    import tty  # noqa: PLC0415
+
+    with contextlib.suppress(OSError):
+        size = fcntl.ioctl(in_fd, termios.TIOCGWINSZ, b"\0" * 8)
+        fcntl.ioctl(master, termios.TIOCSWINSZ, size)
+    saved = termios.tcgetattr(in_fd)
+    tty.setraw(in_fd)
+    try:
+        yield
+    finally:
+        termios.tcsetattr(in_fd, termios.TCSADRAIN, saved)
+
+
+def _relay(
+    master: int,
+    in_fd: int,
+    out_fd: int,
+    on_output: Callable[[bytes], bytes | None],
+    timeout: float,
+) -> None:
+    """Copy keystrokes to the program and its output to us until it closes."""
+    import select  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    deadline = time.monotonic() + timeout
+    watch = [master, in_fd]
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        ready, _, _ = select.select(watch, [], [], min(remaining, 0.5))
+        if master in ready:
+            try:
+                data = os.read(master, 4096)
+            except OSError:  # EIO: the program closed its terminal
+                return
+            if not data:
+                return
+            os.write(out_fd, data)
+            if extra := on_output(data):
+                os.write(out_fd, extra)
+        if in_fd in ready:
+            typed = os.read(in_fd, 1024)
+            if typed:
+                os.write(master, typed)
+            else:
+                watch = [master]  # our stdin closed; keep relaying output
+
+
 class Docker:
     def __init__(
         self,
@@ -226,6 +285,46 @@ class Docker:
             ) from None
         except subprocess.TimeoutExpired:
             raise DockerError("Docker did not finish in time.", hint="Try again.") from None
+
+    def run_pty(
+        self,
+        *args: str,
+        on_output: Callable[[bytes], bytes | None],
+        timeout: float,
+        stdin_fd: int | None = None,
+        stdout_fd: int | None = None,
+    ) -> int:
+        """POSIX: run ``docker <args>`` on a new pseudo-terminal and relay it.
+
+        Keystrokes go straight from our terminal to the program, and its
+        output straight to our terminal; neither is stored. ``on_output`` sees
+        each output chunk and may return extra bytes to display (for example
+        "opened your browser"). Raises ``TimeoutError`` after ``timeout``.
+        """
+        import pty  # noqa: PLC0415 - POSIX only
+        import signal  # noqa: PLC0415
+
+        argv = self._argv(args)
+        self.console.detail("$ docker " + shlex.join(args))
+        in_fd = sys.stdin.fileno() if stdin_fd is None else stdin_fd
+        out_fd = sys.stdout.fileno() if stdout_fd is None else stdout_fd
+        pid, master = pty.fork()
+        if pid == 0:  # pragma: no cover - child process
+            try:
+                os.execv(argv[0], argv)
+            finally:
+                os._exit(127)
+        try:
+            with _raw_terminal(in_fd, master):
+                _relay(master, in_fd, out_fd, on_output, timeout)
+            _, status = os.waitpid(pid, 0)
+            return os.waitstatus_to_exitcode(status)
+        finally:
+            with contextlib.suppress(ChildProcessError, ProcessLookupError, OSError):
+                if os.waitpid(pid, os.WNOHANG) == (0, 0):
+                    os.kill(pid, signal.SIGTERM)
+                    os.waitpid(pid, 0)
+            os.close(master)
 
     def compose(self, project: str, file: Path, *args: str, **kwargs: Any) -> Result:
         return self.run("compose", "-p", project, "-f", str(file), *args, **kwargs)
