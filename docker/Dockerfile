@@ -18,10 +18,10 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_PYTHON_DOWNLOADS=never
 RUN pip install --no-cache-dir "uv==${UV_VERSION}"
 WORKDIR /build
-COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY server/pyproject.toml server/uv.lock server/README.md ./
 # Dependencies first (cached), then the project itself, non-editable.
 RUN uv sync --locked --no-dev --no-install-project
-COPY src ./src
+COPY server/src ./src
 RUN uv sync --locked --no-dev --no-editable
 
 # ---------------------------------------------------------------- CLIs

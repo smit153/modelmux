@@ -1,14 +1,18 @@
 .git
 .github
-.venv
+**/.venv
+# Only server/src, server/pyproject.toml, server/uv.lock, server/README.md and
+# docker/cli are used by the build; keep everything else out of the context.
+cli
+shared
+server/tests
 **/__pycache__
 **/*.py[cod]
-.pytest_cache
-.mypy_cache
-.ruff_cache
-.coverage
-htmlcov
-tests
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
 docs
 .env
 .env.*
