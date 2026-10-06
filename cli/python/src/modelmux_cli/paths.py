@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 APP_NAME = "modelmux"
 OVERRIDE_ENV = "MODELMUX_CLI_HOME"
@@ -39,7 +39,7 @@ def config_dir(
         base = home / "Library" / "Application Support"
     else:
         xdg = env.get("XDG_CONFIG_HOME")
-        base = Path(xdg) if xdg and Path(xdg).is_absolute() else home / ".config"
+        base = Path(xdg) if xdg and PurePosixPath(xdg).is_absolute() else home / ".config"
     return base / APP_NAME
 
 
