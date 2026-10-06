@@ -1,6 +1,6 @@
 [project]
 name = "modelmux"
-version = "0.1.0"
+version = "0.2.0"
 description = "Expose AI coding CLIs as a secure, OpenAI-compatible Chat Completions API"
 readme = "README.md"
 license = "Apache-2.0"
