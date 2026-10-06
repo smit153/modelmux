@@ -173,7 +173,7 @@ jobs:
         run: |
           for attempt in 1 2 3 4 5 6; do
             if uvx --isolated --index-url https://test.pypi.org/simple/ \
-                "modelmux-cli==${VERSION}" --version; then exit 0; fi
+                --from "modelmux-cli==${VERSION}" modelmux --version; then exit 0; fi
             sleep 20
           done
           exit 1
