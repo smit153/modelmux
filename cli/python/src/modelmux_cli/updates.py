@@ -12,7 +12,7 @@ import urllib.request
 
 PYPI_URL = "https://pypi.org/pypi/modelmux-cli/json"
 REGISTRY_URL = "https://ghcr.io/v2/"
-UPGRADE_HINT = "pipx upgrade modelmux-cli   (or: uvx modelmux-cli@latest)"
+UPGRADE_HINT = "pipx upgrade modelmux-cli   (or: uvx --from modelmux-cli@latest modelmux)"
 _RELEASE = re.compile(r"^\d+(\.\d+)*$")
 
 
