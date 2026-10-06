@@ -34,7 +34,7 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: check
         name: Tag, server, CLI and release data agree
         run: |
@@ -60,19 +60,19 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Log in to GHCR
         if: env.DRY_RUN != 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build (amd64 + arm64) and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -96,12 +96,13 @@ jobs:
             --output /work/sbom.cdx.json "${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
       - name: Build provenance attestation
         if: env.DRY_RUN != 'true'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-      - uses: actions/upload-artifact@v4
+          create-storage-record: false
+      - uses: actions/upload-artifact@v7
         if: env.DRY_RUN != 'true'
         with:
           name: sbom
@@ -111,8 +112,8 @@ jobs:
     needs: [version, image]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: Pin the server image by digest
         env:
           DIGEST: ${{ needs.image.outputs.digest }}
@@ -141,7 +142,7 @@ jobs:
         run: |
           uvx --isolated --from "$(ls dist/*.whl)" python -c \
             "from modelmux_cli.release import pinned_image; i = pinned_image(); print(i); assert i and '@sha256:' in i"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -156,14 +157,14 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
       - name: Install from TestPyPI and run it
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -184,7 +185,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -196,7 +197,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets/
       - name: Create the release

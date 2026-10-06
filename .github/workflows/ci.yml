@@ -19,8 +19,8 @@ jobs:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
@@ -53,8 +53,8 @@ jobs:
         working-directory: cli/python
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
           cache-dependency-glob: cli/python/uv.lock
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: server
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build
         run: docker build -f docker/Dockerfile -t "$IMAGE" .
       - name: Smoke test (read-only, non-root, no capabilities)
@@ -100,7 +100,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/work" "$TRIVY_IMAGE" image --input /work/image.tar \
             --format cyclonedx --output /work/sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom.cdx.json
