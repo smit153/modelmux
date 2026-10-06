@@ -82,6 +82,15 @@ ENV PATH=/opt/venv/bin:/usr/local/bin:/usr/bin:/bin \
     MODELMUX_DRIVER_HOME=/home/modelmux/driver-home \
     MODELMUX_WORK_ROOT=/tmp/modelmux
 
+# Certify the pinned CLIs once, here, instead of at every start: version,
+# every lockdown flag and, for Claude, the models (no login, no API call).
+# At startup the server only checks that this manifest matches the binaries.
+RUN install -d -o 10001 -g 10001 -m 0755 /opt/modelmux
+USER 10001:10001
+RUN python -m modelmux certify --output /opt/modelmux/manifest.json
+USER root
+RUN chown -R root:root /opt/modelmux && chmod 0444 /opt/modelmux/manifest.json
+
 USER 10001:10001
 WORKDIR /home/modelmux
 VOLUME ["/home/modelmux/driver-home"]
