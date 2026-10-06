@@ -12,7 +12,8 @@ from modelmux import errors as e
 from modelmux.api.schemas import ChatCompletionRequest
 from modelmux.config import Settings
 from modelmux.core.pipeline import Pipeline, StreamEnd, TextPiece
-from modelmux.drivers.registry import load_driver_class, resolve_models
+from modelmux.drivers.base import ModelInfo
+from modelmux.drivers.registry import load_driver_class
 from modelmux.runtime.limits import ConcurrencyLimiter
 from modelmux.runtime.runner import RunLimits, Runner, resolve_binary
 from modelmux.runtime.workspace import prepare_work_root
@@ -42,7 +43,7 @@ def build_pipeline(settings: Settings, max_concurrent: int = 2) -> Pipeline:
         driver=driver,
         runner=runner,
         limiter=ConcurrencyLimiter(max_concurrent, 4, 5.0),
-        models=resolve_models(driver, None),
+        models={m: ModelInfo(m, m) for m in ("sonnet", "gpt-6.1-sol")},
         settings=settings,
     )
 

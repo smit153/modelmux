@@ -1,5 +1,8 @@
 """``python -m modelmux``: run the server with the settings from the environment.
 
+``python -m modelmux certify`` instead certifies the installed CLIs and
+writes the manifest (run at image build time, see modelmux.certification).
+
 Always one worker (limits are per process; scale with more containers), no
 ``server`` header, and proxy headers only from ``MODELMUX_TRUSTED_PROXIES``.
 """
@@ -29,6 +32,10 @@ def uvicorn_options(settings: Settings) -> dict[str, Any]:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["certify"]:
+        from modelmux.certification import certify_main  # noqa: PLC0415
+
+        raise SystemExit(certify_main(sys.argv[2:]))
     try:
         settings = load_settings()
     except ConfigError as exc:

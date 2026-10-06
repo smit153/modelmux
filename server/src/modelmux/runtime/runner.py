@@ -540,6 +540,11 @@ class ProbeContext:
     def binary(self) -> Path:
         return self.runner.binary
 
+    @property
+    def home(self) -> Path:
+        """The driver home (the CLI's ``HOME``), where its login and caches live."""
+        return self.runner.home
+
     async def run(self, build: Callable[[Path], Invocation], *, budget: float) -> ProbeOutput:
         """Run one invocation (built for a fresh workspace) and collect its output.
 

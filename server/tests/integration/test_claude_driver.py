@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from modelmux.drivers.base import DriverRequest, ProbeContext
+from modelmux.drivers.base import Certified, DriverRequest, ModelInfo, ProbeContext
 from modelmux.drivers.claude import driver as claude_module
 from modelmux.drivers.claude.driver import DISALLOWED_TOOLS, ClaudeDriver
 from modelmux.drivers.registry import create_driver, load_driver_class
@@ -49,12 +49,6 @@ def test_registered_builtin(binary: Path) -> None:
     create_driver(cls, binary)
 
 
-def test_default_models(driver: ClaudeDriver) -> None:
-    ids = [m.id for m in driver.models()]
-    assert ids[:4] == ["sonnet", "opus", "haiku", "fable"]
-    assert "claude-sonnet-5-5" in ids
-
-
 def test_build_invocation(driver: ClaudeDriver, tmp_path: Path) -> None:
     req = DriverRequest(
         cli_model="sonnet",
@@ -96,79 +90,152 @@ def test_classify_exit(driver: ClaudeDriver) -> None:
     assert driver.classify_exit(1, "segfault", []) is None
 
 
-async def test_probe_ok(driver: ClaudeDriver, work_root: Path) -> None:
-    result = await driver.probe(probe_ctx(driver, work_root))
+# ------------------------------------------------------------------ certify (build time)
+
+DISCOVERED = [
+    "sonnet", "opus", "haiku", "fable",
+    "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-4-5-20251001", "claude-fable-5-1",
+]  # fmt: skip
+
+
+async def test_certify_ok(driver: ClaudeDriver, work_root: Path) -> None:
+    # First alias per full ID; [1m] variants and duplicates (best, opusplan,
+    # default) drop out without any list of names to skip.
+    result = await driver.certify(probe_ctx(driver, work_root))
     assert result.ok, result.reason
     assert result.version == "2.1.285"
+    assert result.models is not None
+    assert [m.id for m in result.models] == DISCOVERED
+    assert all(m.id == m.cli_model for m in result.models)
 
 
-async def test_probe_passes_all_lockdown_flags(
+async def test_certify_follows_the_cli(driver: ClaudeDriver, work_root: Path) -> None:
+    # A new alias appears without any code change; an alias that is already a
+    # full ID ("nova" resolves to itself) is published once.
+    ctx = probe_ctx(driver, work_root, FAKE_MODEL_LIST="sonnet, haiku, nova, default")
+    result = await driver.certify(ctx)
+    assert result.models is not None
+    assert [m.id for m in result.models] == [
+        "sonnet", "haiku", "nova", "claude-sonnet-5-5", "claude-haiku-4-5-20251001",
+    ]  # fmt: skip
+
+
+async def test_certify_model_query_argv(
     driver: ClaudeDriver, work_root: Path, tmp_path: Path
 ) -> None:
-    # The flag check must use exactly the argv of a real request.
-    out = tmp_path / "argv.json"
-    ctx = probe_ctx(driver, work_root, FAKE_OUT=str(out), FAKE_SCENARIO="claude_text")
-    assert (await driver.probe(ctx)).ok
-    assert not out.exists()  # probe requests are not recorded; only real ones are
-
-
-@pytest.mark.parametrize("flag", ["--max-turns", "--system-prompt-file", "--safe-mode", "--tools"])
-async def test_probe_missing_flag(driver: ClaudeDriver, work_root: Path, flag: str) -> None:
-    result = await driver.probe(probe_ctx(driver, work_root, FAKE_UNKNOWN_FLAG=flag))
-    assert not result.ok
-    assert result.reason == f"CLI does not support lockdown flag {flag}"
+    log = tmp_path / "queries.jsonl"
+    assert (await driver.certify(probe_ctx(driver, work_root, FAKE_MODEL_LOG=str(log)))).ok
+    queries = [json.loads(line) for line in log.read_text().splitlines()]
+    # One listing query, then one per alias without a [ suffix.
+    assert len(queries) == 1 + 7
+    assert "--model" not in queries[0]
+    resolved = sorted(q[q.index("--model") + 1] for q in queries[1:])
+    assert resolved == sorted(["sonnet", "opus", "haiku", "fable", "best", "opusplan", "default"])
+    for argv in queries:
+        # Every lockdown flag except the one that would hide /model.
+        assert "--disable-slash-commands" not in argv
+        assert argv[argv.index("--tools") + 1] == ""
+        assert argv[argv.index("--max-turns") + 1] == "1"
+        for flag in ("--strict-mcp-config", "--safe-mode", "--restricted",
+                     "--no-session-persistence"):  # fmt: skip
+            assert flag in argv
 
 
 @pytest.mark.parametrize(
-    ("version", "reason"),
-    [("1.9.0 (Claude Code)", "not in"), ("3.0.0 (Claude Code)", "not in"),
-     ("garbage", "could not read")],
-)  # fmt: skip
-async def test_probe_version(
-    driver: ClaudeDriver, work_root: Path, version: str, reason: str
+    ("env", "reason"),
+    [
+        ({"FAKE_MODEL_QUERY": "real"}, "model query made a real model request"),
+        ({"FAKE_MODEL_QUERY": "tools"}, "model query triggered the sandbox tripwire"),
+        ({"FAKE_MODEL_QUERY": "user_command"}, "model query triggered the sandbox tripwire"),
+        ({"FAKE_MODEL_LIST": "sonnet; opus"}, "could not read the model list"),
+        ({"FAKE_MODEL_LIST": "--evil, sonnet"}, "could not read the model list"),
+        ({"FAKE_UNKNOWN_FLAG": "--safe-mode"}, "CLI does not support lockdown flag --safe-mode"),
+        ({"FAKE_VERSION": "1.9.0 (Claude Code)"}, "CLI version 1.9.0 is not in >=2.1,<3"),
+        ({"FAKE_VERSION": "garbage"}, "could not read the CLI version"),
+    ],
+)
+async def test_certify_fails_closed(
+    driver: ClaudeDriver, work_root: Path, env: dict[str, str], reason: str
 ) -> None:
-    result = await driver.probe(probe_ctx(driver, work_root, FAKE_VERSION=version))
+    result = await driver.certify(probe_ctx(driver, work_root, **env))
     assert not result.ok
-    assert reason in result.reason
+    assert result.reason == reason
+    assert result.models is None
 
 
-async def test_probe_live_auth_failure(driver: ClaudeDriver, work_root: Path) -> None:
-    ctx = probe_ctx(
-        driver, work_root, FAKE_PROBE="claude_fixture",
-        FAKE_FIXTURE=str(FIXTURES / "claude" / "auth_error.jsonl"), FAKE_EXIT="1",
-    )  # fmt: skip
-    result = await driver.probe(ctx)
-    assert not result.ok
-    assert result.reason == "live check failed: auth"
-    assert result.version is not None
+@pytest.mark.parametrize("flag", ["--max-turns", "--system-prompt-file", "--tools"])
+async def test_certify_missing_flag(driver: ClaudeDriver, work_root: Path, flag: str) -> None:
+    result = await driver.certify(probe_ctx(driver, work_root, FAKE_UNKNOWN_FLAG=flag))
+    assert result.reason == f"CLI does not support lockdown flag {flag}"
+    assert result.version == "2.1.285"
 
 
-async def test_probe_live_tripwire(driver: ClaudeDriver, work_root: Path) -> None:
-    ctx = probe_ctx(
-        driver, work_root, FAKE_PROBE="claude_fixture",
-        FAKE_FIXTURE=str(FIXTURES / "claude" / "init_with_tools.jsonl"),
-    )  # fmt: skip
-    result = await driver.probe(ctx)
-    assert not result.ok
-    assert "tripwire" in result.reason
-
-
-async def test_probe_live_no_completion(driver: ClaudeDriver, work_root: Path) -> None:
-    ctx = probe_ctx(
-        driver, work_root, FAKE_PROBE="claude_fixture",
-        FAKE_FIXTURE=str(FIXTURES / "claude" / "no_completion.jsonl"),
-    )  # fmt: skip
-    result = await driver.probe(ctx)
-    assert result.reason == "live check did not complete"
-
-
-async def test_probe_unexpected_flag_response(
+async def test_certify_unexpected_flag_response(
     driver: ClaudeDriver, work_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A CLI that does not answer empty input the way we verified is refused.
     monkeypatch.setattr(claude_module, "INPUT_REQUIRED", "something the fake never prints")
-    result = await driver.probe(probe_ctx(driver, work_root))
+    result = await driver.certify(probe_ctx(driver, work_root))
     assert result.reason == "lockdown flag check gave an unexpected response"
+
+
+async def test_certify_run_failure(
+    driver: ClaudeDriver, work_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(claude_module, "PROBE_BUDGET", 0.3)
+    ctx = probe_ctx(driver, work_root, FAKE_SCENARIO="hang_before_output")
+    monkeypatch.setattr(claude_module, "MODEL_QUERY", b"hang\n")  # becomes a normal request
+    result = await driver.certify(ctx)
+    assert result.reason == "run failed: provider_timeout"
+
+
+# ------------------------------------------------------------------ probe (startup)
+
+CERTIFIED = Certified("2.1.285", tuple(ModelInfo(m, m) for m in DISCOVERED))
+
+
+async def test_probe_ok(driver: ClaudeDriver, work_root: Path, tmp_path: Path) -> None:
+    out = tmp_path / "probe.json"
+    result = await driver.probe(probe_ctx(driver, work_root, FAKE_PROBE_OUT=str(out)), CERTIFIED)
+    assert result.ok, result.reason
+    assert result.models == CERTIFIED.models
+    assert result.version == "2.1.285"
+    # One request, the normal locked-down argv, on the account's default model.
+    argv = json.loads(out.read_text())
+    assert "--model" not in argv
+    assert "--disable-slash-commands" in argv
+
+
+async def test_probe_runs_one_process(
+    driver: ClaudeDriver, work_root: Path, tmp_path: Path
+) -> None:
+    log = tmp_path / "queries.jsonl"
+    ctx = probe_ctx(driver, work_root, FAKE_MODEL_LOG=str(log))
+    assert (await driver.probe(ctx, CERTIFIED)).ok
+    assert not log.exists()  # no /model query at startup
+
+
+async def test_probe_needs_certified_models(driver: ClaudeDriver, work_root: Path) -> None:
+    result = await driver.probe(probe_ctx(driver, work_root), Certified("2.1.285", None))
+    assert result.reason == "the manifest lists no Claude models"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "exit_code", "reason"),
+    [("auth_error.jsonl", "1", "live check failed: auth"),
+     ("init_with_tools.jsonl", "0", "live check triggered the sandbox tripwire"),
+     ("no_completion.jsonl", "0", "live check did not complete")],
+)  # fmt: skip
+async def test_probe_live_failures(
+    driver: ClaudeDriver, work_root: Path, fixture: str, exit_code: str, reason: str
+) -> None:
+    ctx = probe_ctx(
+        driver, work_root, FAKE_PROBE="claude_fixture",
+        FAKE_FIXTURE=str(FIXTURES / "claude" / fixture), FAKE_EXIT=exit_code,
+    )  # fmt: skip
+    result = await driver.probe(ctx, CERTIFIED)
+    assert not result.ok
+    assert result.reason == reason
 
 
 async def test_probe_timeout(
@@ -176,7 +243,7 @@ async def test_probe_timeout(
 ) -> None:
     monkeypatch.setattr(claude_module, "LIVE_PROBE_BUDGET", 0.5)
     ctx = probe_ctx(driver, work_root, FAKE_PROBE="hang_before_output")
-    result = await driver.probe(ctx)
+    result = await driver.probe(ctx, CERTIFIED)
     assert result.reason == "probe run failed: provider_timeout"
 
 
