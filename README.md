@@ -46,7 +46,7 @@ safely, report accurately.
 |---|---|
 | **OpenAI compatible** | Chat completions, streaming (SSE, `include_usage`), `tools` / `tool_choice` / `parallel_tool_calls`, `response_format` (`json_object`, `json_schema`, `strict`), `stop`, `/v1/models`, OpenAI-shaped errors |
 | **Two drivers** | Claude Code 2.1.x and Codex 0.159+, one image; add more as plugins without touching core code |
-| **Locked down** | Every built-in tool, MCP server, hook, plugin, setting file and slash command disabled; each lockdown flag verified at startup |
+| **Locked down** | Every built-in tool, MCP server, hook, plugin, setting file and slash command disabled; each lockdown flag certified when the image is built, and the binaries checked against that certificate at startup |
 | **Fail-closed tripwire** | Any tool, command, file, MCP, web-search or unknown execution-like event kills the process group within a second |
 | **Robust runtime** | Timeouts (first output, idle, total), output caps, group kill with SIGTERM→SIGKILL, bounded queue, client-disconnect handling |
 | **Hardened image** | Non-root (UID 10001), read-only root filesystem, no setuid binaries, `tini`, pinned and checksum-verified CLIs, SBOM + vulnerability scan in CI |
@@ -128,14 +128,17 @@ model_list:
 
 ### Models
 
-| Driver | Default model IDs |
-|---|---|
-| `claude` | `sonnet`, `opus`, `haiku`, `fable`, `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-fable-5-1`, `claude-haiku-4-5-20251001` |
-| `codex` | `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra` |
+Nothing is hand-written: the models come from the CLIs themselves, and only
+those are accepted. List them with `GET /v1/models`.
 
-Only these IDs are accepted. Restrict or rename them with
-`MODELMUX_MODELS='{"fast": "haiku"}'` (public ID → CLI model). Anyone who can
-call the API can pick any listed model, so trim the list if cost matters.
+| Driver | Taken from | Example today |
+|---|---|---|
+| `claude` | the CLI's `/model` answer, recorded when the image is built | `sonnet`, `opus`, `haiku`, `fable` and their full IDs, such as `claude-sonnet-5-5` |
+| `codex` | `codex debug models`, fetched fresh from OpenAI at startup (it depends on your account) | `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, ... |
+
+Anyone who can call the API can pick any listed model, so narrow the list if
+cost matters: `MODELMUX_MODELS=sonnet,haiku`. See
+[CONFIGURATION.md](docs/CONFIGURATION.md#models).
 
 ### Behaviour worth knowing
 

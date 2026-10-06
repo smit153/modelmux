@@ -4,7 +4,7 @@ A driver teaches ModelMux how to use one CLI as a text-only model. Adding a
 driver never requires changes to `core/`, `runtime/` or `api/`.
 
 A driver **translates**; it never executes. It builds an argv list, parses
-output lines, classifies failures and describes how to probe the CLI. The
+output lines, classifies failures and describes how to check the CLI. The
 runtime spawns, supervises and kills the process; the pipeline enforces the
 tripwire.
 
@@ -12,6 +12,8 @@ tripwire.
 
 ```python
 from modelmux.drivers.base import (
+    CertifyResult,
+    Certified,
     Driver,
     DriverRequest,
     Invocation,
@@ -26,22 +28,26 @@ from modelmux.errors import ModelMuxError
 class MyDriver(Driver):
     name = "mycli"  # the value of MODELMUX_DRIVER
     binary_name = "mycli"  # looked up on PATH unless MODELMUX_CLI_PATH is set
-    supported_versions = ">=1.4,<2"  # PEP 440 specifier, checked by probe()
+    supported_versions = ">=1.4,<2"  # PEP 440 specifier, checked by certify()
 
-    def models(self) -> list[ModelInfo]: ...
-    async def probe(self, ctx: ProbeContext) -> ProbeResult: ...
+    async def certify(self, ctx: ProbeContext) -> CertifyResult: ...  # image build
+    async def probe(self, ctx: ProbeContext, certified: Certified) -> ProbeResult: ...  # startup
+    def lockdown_spec(self) -> tuple[str, ...]: ...
     def build_invocation(self, req: DriverRequest) -> Invocation: ...
     def parse_line(self, line: bytes) -> list[NormalizedEvent]: ...
     def classify_exit(
         self, exit_code: int, stderr_tail: str, seen: list[NormalizedEvent]
     ) -> ModelMuxError | None: ...
     def env_allowlist(self) -> frozenset[str]: ...  # optional, default: none
+    def integrity_files(self) -> tuple[Path, ...]: ...  # optional, default: the binary
 ```
 
 | Method | Responsibility |
 |---|---|
-| `models()` | The default allowlist: public model ID → CLI `--model` value. The only models accepted (users can replace it with `MODELMUX_MODELS`). |
-| `probe(ctx)` | Runs at startup through `ctx.run(build, budget=...)`. Check the version, check that **every lockdown flag you pass is accepted**, then make one tiny live request. Return `ProbeResult(ok=False, reason=...)` with a short, secret-free reason; the service will not start. |
+| `certify(ctx)` | **Image build time, no login.** Check everything the pinned binary decides: the version (`await self.check_version(ctx)`), that **every lockdown flag you pass is accepted**, and the models if the binary alone decides them. Return `CertifyResult(ok=True, version=..., models=(ModelInfo(id, cli_model), ...))`, or `models=None` when the account decides them. On failure return `ok=False` with a short, secret-free reason (raising `CheckError(reason)` inside your helpers keeps this simple): the image build fails. Run through `ctx.run(build, budget=...)` only. |
+| `probe(ctx, certified)` | **Every startup.** Only what can change: discover account-dependent models (never hardcode a list, never fall back to one) and make one tiny live request with `await self.check_live(ctx, build, budget=...)`. Return `ProbeResult(ok=True, version=certified.version, models=...)`; these become the only models accepted (`MODELMUX_MODELS` can narrow them). `ctx.home` is the CLI's `HOME`. |
+| `lockdown_spec()` | Every fixed argument and setting your lockdown relies on (for example `self.lockdown_args("<model>", Path("<workspace>"))`). Its sha256 is stored by certification; if the code changes without a new certification, startup refuses. |
+| `integrity_files()` | Files hashed into the certificate. Default: the binary. If your binary is a launcher, add the program it starts. |
 | `build_invocation(req)` | Return `Invocation(argv, stdin, env, files)`. `argv[0]` must be `self.binary` (use `self.argv(...)`). **Only `req.cli_model` may come from the request**, and it is already allowlisted. Send the transcript on stdin; put the system prompt in a private file (`files={"system-prompt.txt": ...}` is written with mode `0600` into `req.workspace`). |
 | `parse_line(line)` | Turn one stdout line into zero or more events. Must **never raise**; return `ProviderFailure(FailureKind.PROTOCOL, ...)` for garbage (including `RecursionError` from deeply nested JSON). |
 | `classify_exit(...)` | Map a non-zero exit to a specific error using the stderr tail, or return `None` for the generic `provider_error`. |
@@ -78,6 +84,8 @@ treats every stdout line as the answer:
 from typing import ClassVar
 
 from modelmux.drivers.base import (
+    CertifyResult,
+    Certified,
     Driver,
     DriverRequest,
     Invocation,
@@ -94,11 +102,15 @@ class EchoDriver(Driver):
     binary_name: ClassVar[str] = "fake-cli"
     supported_versions: ClassVar[str] = ">=0"
 
-    def models(self) -> list[ModelInfo]:
-        return [ModelInfo(id="echo-1", cli_model="echo-1")]
+    async def certify(self, ctx: ProbeContext) -> CertifyResult:
+        models = (ModelInfo(id="echo-1", cli_model="echo-1"),)
+        return CertifyResult(ok=True, reason="ok", version="1.0.0", models=models)
 
-    async def probe(self, ctx: ProbeContext) -> ProbeResult:
-        return ProbeResult(ok=True, reason="ok")
+    async def probe(self, ctx: ProbeContext, certified: Certified) -> ProbeResult:
+        return ProbeResult(ok=True, reason="ok", models=certified.models or ())
+
+    def lockdown_spec(self) -> tuple[str, ...]:
+        return ("--model", "<model>")
 
     def build_invocation(self, req: DriverRequest) -> Invocation:
         return Invocation(argv=self.argv("--model", req.cli_model), stdin=req.transcript.encode())
@@ -112,18 +124,27 @@ class EchoDriver(Driver):
         return None
 ```
 
-A real driver's probe should look like the Claude driver's
+A real driver should look like the Claude driver
 (`server/src/modelmux/drivers/claude/driver.py`):
 
 ```python
-async def probe(self, ctx: ProbeContext) -> ProbeResult:
-    # 1. version:  ctx.run(lambda ws: Invocation(self.argv("--version"), b""), budget=30)
+async def certify(self, ctx: ProbeContext) -> CertifyResult:  # image build, no login
+    # 1. version:  await self.check_version(ctx)
     # 2. flags:    run the real lockdown argv with EMPTY stdin; the CLI must fail
     #              with its "no input" message, not "unknown option".
-    # 3. live:     one tiny real request built with build_invocation(); require
-    #              Completed and no ToolAttempt / ProviderFailure.
+    # 3. models:   if the binary decides them, read them from the CLI here.
+    ...
+
+async def probe(self, ctx: ProbeContext, certified: Certified) -> ProbeResult:  # startup
+    # 1. models:   certified.models, or discover account-dependent ones now.
+    # 2. live:     await self.check_live(ctx, build, budget=...): one tiny real
+    #              request; requires Completed and no ToolAttempt / ProviderFailure.
     ...
 ```
+
+Add the driver to the image's certification (`python -m modelmux certify`
+certifies every built-in driver; a plugin can be certified with
+`--driver mycli=/path/to/cli`).
 
 ## Registering the driver
 
@@ -138,8 +159,8 @@ mycli = "my_package.driver:MyDriver"
 
 Install the package next to ModelMux and set `MODELMUX_DRIVER=mycli`. Only the
 selected entry point is imported. The class is validated at startup: required
-attributes, a valid `supported_versions`, a matching `name`, and a non-empty
-model list with valid, unique IDs.
+attributes, a valid `supported_versions` and a matching `name`; the models it
+reports must be a non-empty list of valid, unique IDs.
 
 > A selected driver runs with ModelMux's full privileges. Only install drivers
 > you trust.
@@ -156,7 +177,9 @@ The test suite gives you most of what you need:
 - **The fake CLI** (`server/tests/fakes/fake_cli.py`) can replay any fixture
   (`FAKE_SCENARIO=fixture`, `FAKE_FIXTURE=...`), hang, flood output, ignore
   SIGTERM, leave children behind, and record its argv and environment. Teach it
-  your CLI's `--version`, "unknown flag" and "no input" behaviour for probe tests.
+  your CLI's `--version`, "unknown flag" and "no input" behaviour for certify tests.
+- **A test manifest**: the `manifest` fixture in `server/tests/conftest.py`
+  certifies the fake CLIs once per session, like the image build does.
 - **The security suite** (`server/tests/security/test_api_security.py`) is
   parametrized over drivers: add yours to `driver_name` and to the per-driver
   maps in `server/tests/helpers.py`.

@@ -18,7 +18,7 @@ Windows) and **Python 3.10+**. The CLI has no other dependencies.
 
 | Command | What it does |
 |---|---|
-| `modelmux up [provider…] [--image REF] [--port P=PORT]` | Checks Docker, creates the API key and settings, downloads the server image, creates login volumes, and starts every provider that is logged in. Safe to run again. |
+| `modelmux up [provider…] [--image REF] [--port P=PORT]` | Checks Docker, creates the API key and settings, downloads the server image, creates login volumes, and starts every provider that is logged in. Safe to run again: providers that are already running and unchanged are left alone. |
 | `modelmux login <provider> [--method M] [--no-browser] [--raw] [--force]` | Runs the provider's own login in a short-lived helper container, opens the link in your browser, then restarts the provider and waits until it answers: **✓ logged in and tested**. Already logged in: just makes sure it runs. |
 | `modelmux logout <provider> [--yes]` | Stops the provider, lets it revoke its login, and deletes **only** that provider's login volume. Asks first unless `--yes`. |
 | `modelmux status` | One line per provider: container, login, health, URL. |
