@@ -140,6 +140,8 @@ def classify(stderr: str, command: str, platform: str | None = None) -> DockerEr
 @contextlib.contextmanager
 def _raw_terminal(in_fd: int, master: int) -> Iterator[None]:
     """Give the pseudo-terminal our window size and put our terminal in raw mode."""
+    if sys.platform == "win32":
+        raise OSError("pseudo-terminals need Linux or macOS")
     if not os.isatty(in_fd):
         yield
         return
@@ -301,6 +303,8 @@ class Docker:
         each output chunk and may return extra bytes to display (for example
         "opened your browser"). Raises ``TimeoutError`` after ``timeout``.
         """
+        if sys.platform == "win32":
+            raise OSError("pseudo-terminals need Linux or macOS")
         import pty  # noqa: PLC0415 - POSIX only
         import signal  # noqa: PLC0415
 

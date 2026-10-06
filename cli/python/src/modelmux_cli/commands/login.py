@@ -17,6 +17,7 @@ import getpass
 import os
 import secrets
 import signal
+import sys
 import threading
 import webbrowser
 from collections.abc import Callable, Iterator
@@ -97,7 +98,7 @@ def _link_handler(
 def cancel_on_signals() -> Iterator[None]:
     """Treat SIGTERM and SIGHUP (terminal closed) like Ctrl+C while logging in,
     so the helper container is always removed and the user sees "Cancelled."."""
-    if os.name != "posix" or threading.current_thread() is not threading.main_thread():
+    if sys.platform == "win32" or threading.current_thread() is not threading.main_thread():
         yield
         return
 
