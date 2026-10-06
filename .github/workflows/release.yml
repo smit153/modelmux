@@ -114,6 +114,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
+      - name: Test the CLI as committed
+        working-directory: cli/python
+        run: |
+          uv sync --locked
+          uv run pytest -q
       - name: Pin the server image by digest
         env:
           DIGEST: ${{ needs.image.outputs.digest }}
@@ -132,12 +137,9 @@ jobs:
           open(path, "w").write(json.dumps(data, indent=2) + "\n")
           print(data)
           EOF
-      - name: Test and build the CLI
+      - name: Build the CLI
         working-directory: cli/python
-        run: |
-          uv sync --locked
-          uv run pytest -q
-          uv build -o ../../dist
+        run: uv build -o ../../dist
       - name: The built CLI carries the pinned image
         run: |
           uvx --isolated --from "$(ls dist/*.whl)" python -c \
