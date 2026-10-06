@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from collections.abc import Sequence
 from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
@@ -72,27 +73,37 @@ def validate_driver_class(obj: object, name: str) -> None:
 
 
 def create_driver(cls: type[Driver], binary: Path) -> Driver:
-    driver = cls(binary)
-    resolve_models(driver, None)  # validates the default list
-    return driver
+    return cls(binary)
 
 
-def resolve_models(driver: Driver, override: dict[str, str] | None) -> dict[str, ModelInfo]:
-    """The effective allowlist: ``override`` (MODELMUX_MODELS) or the driver default."""
-    if override is not None:
-        models = [ModelInfo(id=k, cli_model=v) for k, v in override.items()]
-    else:
-        models = driver.models()
-    if not models:
-        raise DriverLoadError(f"driver {driver.name!r} has no models")
+def resolve_models(
+    driver_name: str, discovered: Sequence[ModelInfo], allow: Sequence[str] | None
+) -> dict[str, ModelInfo]:
+    """The effective allowlist: the models the CLI offers, narrowed by ``allow``.
+
+    ``allow`` (MODELMUX_MODELS) can only restrict: naming a model the CLI did
+    not offer is an error, so a typo never silently serves nothing.
+    """
     result: dict[str, ModelInfo] = {}
-    for model in models:
+    for model in discovered:
         try:
             validate_model_id(model.id)
             validate_cli_model(model.cli_model)
         except ValueError as exc:
-            raise DriverLoadError(f"driver {driver.name!r} has an invalid model: {exc}") from None
+            raise DriverLoadError(
+                f"driver {driver_name!r} discovered an invalid model: {exc}"
+            ) from None
         if model.id in result:
-            raise DriverLoadError(f"driver {driver.name!r} lists model {model.id!r} twice")
+            raise DriverLoadError(f"driver {driver_name!r} discovered model {model.id!r} twice")
         result[model.id] = model
-    return result
+    if not result:
+        raise DriverLoadError(f"driver {driver_name!r} discovered no models")
+    if allow is None:
+        return result
+    unknown = [model_id for model_id in allow if model_id not in result]
+    if unknown:
+        raise DriverLoadError(
+            f"MODELMUX_MODELS names {unknown[0]!r}, which the {driver_name} CLI does not offer"
+        )
+    wanted = set(allow)
+    return {model_id: model for model_id, model in result.items() if model_id in wanted}

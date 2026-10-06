@@ -28,9 +28,10 @@ from modelmux.api.routes_chat import router as chat_router
 from modelmux.api.routes_health import Readiness
 from modelmux.api.routes_health import router as health_router
 from modelmux.api.routes_models import router as models_router
+from modelmux.certification import ManifestError, load_certificate, verify_certificate
 from modelmux.config import ConfigError, Settings, load_settings
 from modelmux.core.pipeline import Pipeline
-from modelmux.drivers.base import Driver
+from modelmux.drivers.base import Certified, Driver
 from modelmux.drivers.registry import (
     DriverLoadError,
     create_driver,
@@ -40,6 +41,7 @@ from modelmux.drivers.registry import (
 from modelmux.observability.logging import setup_logging
 from modelmux.observability.metrics import Metrics
 from modelmux.observability.metrics import router as metrics_router
+from modelmux.runtime.hardening import hardening_problems
 from modelmux.runtime.limits import ConcurrencyLimiter
 from modelmux.runtime.runner import (
     BinaryResolutionError,
@@ -73,15 +75,47 @@ async def _startup_checks(app: FastAPI) -> None:
         prepare_work_root(settings.work_root)
     except (WorkRootError, OSError) as exc:
         raise StartupError(f"MODELMUX_WORK_ROOT is unusable: {exc}") from None
-    result = await driver.probe(ProbeContext(app.state.runner, settings.work_root))
+    try:
+        certificate = load_certificate(settings.manifest, driver.name)
+        await verify_certificate(certificate, driver)
+    except ManifestError as exc:
+        raise StartupError(str(exc)) from None
+    _check_hardening(settings)
+    certified = Certified(certificate.cli_version, certificate.models)
+    result = await driver.probe(ProbeContext(app.state.runner, settings.work_root), certified)
     if not result.ok:
         log.error(
             "driver probe failed",
-            extra={"event": "probe_failed", "reason": result.reason, "version": result.version},
+            extra={
+                "event": "probe_failed",
+                "reason": result.reason,
+                "version": certificate.cli_version,
+            },
         )
         raise StartupError(f"driver {driver.name!r} probe failed: {result.reason}")
+    try:
+        models = resolve_models(driver.name, result.models, settings.models)
+    except DriverLoadError as exc:
+        raise StartupError(str(exc)) from None
+    pipeline: Pipeline = app.state.pipeline
+    pipeline.models = models
     app.state.readiness.driver_ready = True
-    log.info("driver ready", extra={"event": "probe_ok", "version": result.version})
+    log.info(
+        "driver ready",
+        extra={"event": "probe_ok", "version": certificate.cli_version, "models": list(models)},
+    )
+
+
+def _check_hardening(settings: Settings) -> None:
+    problems = hardening_problems()
+    if not problems:
+        return
+    if settings.require_hardening:
+        raise StartupError("the container is not hardened: " + "; ".join(problems))
+    log.warning(
+        "hardening check DISABLED (MODELMUX_REQUIRE_HARDENING=false)",
+        extra={"event": "hardening_disabled", "problems": problems},
+    )
 
 
 @asynccontextmanager
@@ -109,10 +143,6 @@ def create_app(
     )
 
     driver = _build_driver(settings)
-    try:
-        models = resolve_models(driver, settings.models)
-    except DriverLoadError as exc:
-        raise StartupError(str(exc)) from None
 
     runner = Runner(
         driver.binary,
@@ -140,8 +170,9 @@ def create_app(
     app.state.driver = driver
     app.state.runner = runner
     app.state.limiter = limiter
+    # Models are discovered from the CLI by the startup probe (see _startup_checks).
     app.state.pipeline = Pipeline(
-        driver=driver, runner=runner, limiter=limiter, models=models, settings=settings
+        driver=driver, runner=runner, limiter=limiter, models={}, settings=settings
     )
     app.state.readiness = Readiness(saturated=limiter.saturated)
     app.state.metrics = None
@@ -173,7 +204,6 @@ def create_app(
             "event": "startup",
             "version": __version__,
             "driver_name": driver.name,
-            "models": len(models),
         },
     )
     return app

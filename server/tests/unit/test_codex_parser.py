@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from modelmux.drivers.codex import parser
 from modelmux.drivers.codex.parser import classify_failure, parse_line
 from modelmux.drivers.events import (
     Completed,
@@ -167,3 +168,67 @@ def test_classify(message: str, kind: FailureKind) -> None:
 def test_deeply_nested_line_never_raises() -> None:
     line = ('{"type":"item.started","x":' + "[" * 100_000 + "]" * 100_000 + "}").encode()
     assert parse_line(line) == [ProviderFailure(FailureKind.PROTOCOL, "unparseable output line")]
+
+
+# ------------------------------------------------------------------ model discovery
+
+CATALOG = FIXTURES / "model_catalog.json"
+
+
+def test_catalog_from_recorded_output() -> None:
+    # Trimmed from codex-cli 0.159.2 `debug models --bundled`.
+    models = parser.parse_model_catalog(CATALOG.read_bytes())
+    assert models is not None
+    assert [m.slug for m in models][:2] == ["gpt-6.1-sol", "gpt-6-astra"]  # by priority
+    assert [m.slug for m in models if not m.visible] == [
+        "gpt-daybreak-blue-latest", "gpt-daybreak-red-latest", "codex-auto-review",
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"slug": "a", "visibility": "hide", "supported_in_api": True},
+        {"slug": "a", "visibility": "list", "supported_in_api": False},
+        {"slug": "a", "visibility": "list"},
+    ],
+)
+def test_catalog_hidden_or_unsupported(entry: dict[str, object]) -> None:
+    models = parser.parse_model_catalog(json.dumps({"models": [entry]}).encode())
+    assert models is not None
+    assert not models[0].visible
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b"not json", b"[]", b'{"models": {}}', b'{"models": [{"name": "x"}]}', b'{"models": [1]}'],
+)
+def test_catalog_unreadable(raw: bytes) -> None:
+    assert parser.parse_model_catalog(raw) is None
+
+
+def test_cache_metadata() -> None:
+    raw = json.dumps({
+        "fetched_at": "2026-10-06T16:49:50.129721610Z", "client_version": "0.159.2",
+        "models": [{"slug": "a"}, {"slug": "b"}],
+    }).encode()  # fmt: skip
+    cache = parser.parse_model_cache(raw)
+    assert cache is not None
+    assert cache.fetched_at.year == 2026
+    assert cache.fetched_at.tzinfo is not None
+    assert cache.client_version == "0.159.2"
+    assert cache.slugs == {"a", "b"}
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"client_version": "0.159.2", "models": []},
+        {"fetched_at": "yesterday", "client_version": "0.159.2", "models": []},
+        {"fetched_at": "2026-10-06T16:49:50", "client_version": "0.159.2", "models": []},
+        {"fetched_at": "2026-10-06T16:49:50Z", "client_version": 159, "models": []},
+        {"fetched_at": "2026-10-06T16:49:50Z", "client_version": "0.159.2"},
+    ],
+)
+def test_cache_unreadable(data: dict[str, object]) -> None:
+    assert parser.parse_model_cache(json.dumps(data).encode()) is None

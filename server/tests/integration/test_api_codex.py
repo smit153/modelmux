@@ -31,7 +31,11 @@ def test_chat_ok(client: TestClient) -> None:
 
 def test_models(client: TestClient) -> None:
     ids = [m["id"] for m in client.get("/v1/models", headers=AUTH).json()["data"]]
-    assert ids == ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]
+    # Exactly what the CLI's catalog lists as visible, by priority.
+    assert ids == [
+        "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+        "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5",
+    ]  # fmt: skip
 
 
 def test_claude_model_not_available(client: TestClient) -> None:

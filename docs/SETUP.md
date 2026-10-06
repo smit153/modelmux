@@ -167,12 +167,15 @@ docker compose -f docker/compose.example.yaml up -d modelmux-codex     # optiona
 | `modelmux-claude` | `claude` | `http://127.0.0.1:8101` |
 | `modelmux-codex` | `codex` | `http://127.0.0.1:8102` |
 
-At startup ModelMux checks the CLI before it serves anything:
+The image build already certified the CLIs (version, every lockdown flag,
+the Claude models; see [CONFIGURATION.md](CONFIGURATION.md#certification)).
+At startup ModelMux only checks what can change:
 
-1. the CLI version is supported,
-2. **every lockdown flag** (and, for Codex, every feature name and config key)
-   is accepted, offline, with no API call,
-3. one tiny real request (`"Reply with exactly the word: ok"`) succeeds.
+1. the CLI binaries are the certified ones (hash check, no process),
+2. the container runs hardened (non-root, no capabilities,
+   `no-new-privileges`, read-only root),
+3. Codex only: its current model list, fetched from OpenAI,
+4. one tiny real request (`"Reply with exactly the word: ok"`) succeeds.
 
 If any step fails the container **exits** with a clear message instead of
 serving in a half-working state. Read it with:
@@ -242,9 +245,9 @@ docker compose -f docker/compose.example.yaml logs -f modelmux-claude
 3. Pass the new version to the build:
    `docker compose -f docker/compose.example.yaml build --build-arg CLAUDE_CODE_VERSION=<new>`
    (or update the `ARG` defaults in `docker/Dockerfile`).
-4. Start it. The startup probe refuses to run if a lockdown flag disappeared
-   in the new version, so a breaking CLI change cannot silently weaken the
-   sandbox.
+4. The build certifies the new CLI and **fails** if a lockdown flag
+   disappeared or `/model` changed, so a breaking CLI change cannot silently
+   weaken the sandbox or reach a running container.
 
 **Stopping and removing**:
 
@@ -259,8 +262,12 @@ docker compose -f docker/compose.example.yaml down -v     # also deletes the log
 |---|---|---|
 | `invalid configuration: MODELMUX_API_KEYS: ...` | missing or short key | set a ≥ 32-character key in `docker/.env` |
 | `probe failed: live check failed: auth` | the CLI is not logged in (or the login expired) | step 5 |
-| `probe failed: CLI does not support lockdown flag --x` | the CLI version changed a flag | pin the previous CLI version; report it |
-| `probe failed: CLI version X is not in ...` | unsupported CLI version | use the pinned version |
+| `probe failed: the model list was not fetched from OpenAI (not logged in?)` | Codex is not logged in, or cannot reach OpenAI | step 5; check outbound HTTPS |
+| `MODELMUX_MODELS names 'x', which the ... CLI does not offer` | the filter names a model the CLI does not list | fix `MODELMUX_MODELS` (see `/v1/models` without it) |
+| `no manifest at ... this installation is not certified` | the server runs outside the image, or `MODELMUX_MANIFEST` is wrong | use the image, or run `python -m modelmux certify` |
+| `the claude CLI is not the certified one` / `lockdown settings changed` | a different CLI binary, or changed driver code, than the image certified | rebuild the image (it certifies again) |
+| `the container is not hardened: ...` | started without the hardening options | add the options named in the message (`modelmux up` and the compose example set them all) |
+| (build) `failed certification: CLI does not support lockdown flag --x` | the new CLI version changed a flag | pin the previous CLI version; report it |
 | `probe failed: live check failed: rate_limited` | provider quota reached | wait, or check your plan |
 | HTTP `503 overloaded` with `Retry-After` | all CLI slots busy and the queue is full | retry, or raise `MODELMUX_MAX_CONCURRENT_PROCESSES` / run more containers |
 | HTTP `502 sandbox_violation` | the model tried to use a tool; the process was killed | expected behaviour; nothing ran |

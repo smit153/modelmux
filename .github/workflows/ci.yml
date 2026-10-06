@@ -89,6 +89,20 @@ jobs:
             --entrypoint sh "$IMAGE" -c \
             'test "$(id -u)" = 10001 && claude --version && codex --version \
              && ! touch /usr/x 2>/dev/null && test -z "$(find / -xdev -perm /6000 -type f)"'
+      - name: Startup check (certified, hardened, not logged in)
+        run: |
+          # Each driver must pass manifest verification and the hardening
+          # check, then stop exactly at the login step (CI has no login).
+          for pair in "claude:live check failed: auth" \
+                      "codex:the model list was not fetched from OpenAI"; do
+            driver="${pair%%:*}" expected="${pair#*:}"
+            out=$(docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev \
+              --tmpfs /home/modelmux/driver-home:rw,uid=10001,gid=10001,mode=0700 \
+              --cap-drop ALL --security-opt no-new-privileges:true \
+              -e MODELMUX_DRIVER="$driver" -e MODELMUX_API_KEYS="$(openssl rand -hex 24)" \
+              "$IMAGE" 2>&1) && { echo "$driver started without a login"; exit 1; }
+            echo "$out" | grep -F "$expected" || { echo "$out"; exit 1; }
+          done
       - name: Export image
         run: docker save "$IMAGE" -o image.tar
       - name: Vulnerability scan (fail on fixable HIGH/CRITICAL)

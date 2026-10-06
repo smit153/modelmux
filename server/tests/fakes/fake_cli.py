@@ -24,7 +24,21 @@ argument" for ``FAKE_UNKNOWN_FLAG``, "Unknown feature flag" for
 empty-input error, and ``codex_text`` / ``codex_fixture`` scenarios.
 
 Requests whose stdin contains ``modelmux-probe`` use ``FAKE_PROBE``
-(default ``claude_text`` replying "ok") instead of ``FAKE_SCENARIO``.
+(default ``claude_text`` replying "ok") instead of ``FAKE_SCENARIO``;
+``FAKE_PROBE_OUT`` records their argv.
+
+Model discovery:
+
+- Claude: stdin ``/model`` is answered locally like Claude Code 2.1.285
+  (``FAKE_MODEL_QUERY``: ``ok``, ``real`` = looks like a paid request,
+  ``tools`` = init lists tools, ``user_command`` = a non-built-in
+  command; ``FAKE_MODEL_LIST`` replaces the alias list;
+  ``FAKE_DEFAULT_MODEL`` what no ``--model`` resolves to; ``FAKE_MODEL_LOG``
+  gets one JSON argv per query).
+- Codex: ``debug models`` prints ``fixtures/codex/model_catalog.json``
+  (``FAKE_CATALOG``: ``live`` writes ``$HOME/.codex/models_cache.json`` like a
+  real fetch; ``bundled`` writes none; ``stale``, ``other_version`` and
+  ``mismatch`` write a cache that is not fresh; ``fail`` and ``garbage``).
 
 It is launched through a wrapper script (see ``tests/fakes/__init__.py``)
 so it runs with the test interpreter under the runner's minimal environment.
@@ -39,6 +53,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -319,6 +334,34 @@ def codex_text(reply: str) -> int:
     return 0
 
 
+CATALOG = Path(__file__).resolve().parents[1] / "fixtures" / "codex" / "model_catalog.json"
+
+
+def codex_models() -> int:
+    mode = os.environ.get("FAKE_CATALOG", "live")
+    if mode == "fail":
+        sys.stderr.write("Error: failed to load the model catalog\n")
+        return 1
+    if mode == "garbage":
+        out("not a catalog")
+        return 0
+    catalog = json.loads(CATALOG.read_text())
+    if mode != "bundled" and "--bundled" not in sys.argv:  # --bundled never fetches
+        fetched = datetime.now(UTC) - (timedelta(days=1) if mode == "stale" else timedelta())
+        version = os.environ.get("FAKE_VERSION", "codex-cli 0.159.2").rsplit(" ", 1)[-1]
+        models = catalog["models"][:-1] if mode == "mismatch" else catalog["models"]
+        cache = Path(os.environ["HOME"]) / ".codex" / "models_cache.json"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({
+            "fetched_at": fetched.isoformat().replace("+00:00", "Z"),
+            "etag": 'W/"fake"',
+            "client_version": "0.1.0" if mode == "other_version" else version,
+            "models": models,
+        }))  # fmt: skip
+    out(json.dumps(catalog))
+    return 0
+
+
 def codex_mode() -> int:
     argv = sys.argv[2:]
     feature = os.environ.get("FAKE_UNKNOWN_FEATURE")
@@ -335,16 +378,74 @@ def codex_mode() -> int:
     return agent_mode("codex_text", codex_text, "No prompt provided via stdin.")
 
 
+MODEL_ALIASES = {
+    "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5",
+    "haiku": "claude-haiku-4-5-20251001", "fable": "claude-fable-5-1",
+    "best": "claude-fable-5-1", "opusplan": "claude-sonnet-5-5", "default": "claude-sonnet-5-5",
+}  # fmt: skip
+AVAILABLE = "sonnet, opus, haiku, fable, best, sonnet[1m], opus[1m], fable[1m], opusplan, default"
+
+
+def claude_model_query() -> int:
+    argv = sys.argv
+    log = os.environ.get("FAKE_MODEL_LOG")
+    if log:
+        with open(log, "a") as fh:
+            fh.write(json.dumps(argv) + "\n")
+    mode = os.environ.get("FAKE_MODEL_QUERY", "ok")
+    if "--model" in argv:
+        alias = argv[argv.index("--model") + 1]
+        base, _, suffix = alias.partition("[")
+        model = MODEL_ALIASES.get(base, base) + (f"[{suffix}" if suffix else "")
+    else:
+        model = os.environ.get("FAKE_DEFAULT_MODEL", MODEL_ALIASES["default"])
+    if "--disable-slash-commands" in argv:
+        text = "/model isn't available in this environment."
+    else:
+        available = os.environ.get("FAKE_MODEL_LIST", AVAILABLE)
+        text = (
+            f"Current model: `{model}`\n"
+            f"Usage: /model <name>. Available: {available}, or a full model ID."
+        )
+    real = mode == "real"
+    zero = {"input_tokens": 0, "output_tokens": 0}
+    commands = [{"name": "deep-research", "description": "x", "builtin": True}]
+    if mode == "user_command":
+        commands.append({"name": "deploy", "description": "x", "builtin": False})
+    emit({"type": "system", "subtype": "commands_changed", "commands": commands})
+    emit({"type": "system", "subtype": "init", "model": model, "mcp_servers": [],
+          "tools": ["Bash"] if mode == "tools" else [], "slash_commands": ["model"]})  # fmt: skip
+    emit({"type": "assistant", "message": {
+        "model": model if real else "<synthetic>", "role": "assistant",
+        "content": [{"type": "text", "text": text}],
+        "usage": {"input_tokens": 12, "output_tokens": 3} if real else zero}})  # fmt: skip
+    emit({"type": "result", "subtype": "success", "is_error": False, "result": text,
+          "num_turns": 1 if real else 0, "total_cost_usd": 0.0012 if real else 0,
+          "usage": {"input_tokens": 12, "output_tokens": 3} if real else zero})  # fmt: skip
+    return 0
+
+
 def claude_mode() -> int:
-    return agent_mode("claude_text", claude_text, INPUT_REQUIRED)
-
-
-def agent_mode(text_scenario: str, text_fn: Callable[[str], int], empty_error: str) -> int:
     stdin = sys.stdin.buffer.read()
+    if stdin.strip() == b"/model":
+        return claude_model_query()
+    return agent_mode("claude_text", claude_text, INPUT_REQUIRED, stdin)
+
+
+def agent_mode(
+    text_scenario: str,
+    text_fn: Callable[[str], int],
+    empty_error: str,
+    stdin: bytes | None = None,
+) -> int:
+    if stdin is None:
+        stdin = sys.stdin.buffer.read()
     if not stdin.strip():
         sys.stderr.write(empty_error + "\n")
         return 1
     probe = b"modelmux-probe" in stdin
+    if probe and os.environ.get("FAKE_PROBE_OUT"):
+        Path(os.environ["FAKE_PROBE_OUT"]).write_text(json.dumps(sys.argv))
     if not probe:
         record_invocation(stdin)
     name = os.environ.get("FAKE_PROBE" if probe else "FAKE_SCENARIO", text_scenario)
@@ -386,6 +487,8 @@ def main() -> int:
         return 1
     if codex and sys.argv[1:2] == ["exec"]:
         return codex_mode()
+    if codex and sys.argv[1:3] == ["debug", "models"]:
+        return codex_models()
     if "-p" in sys.argv:
         return claude_mode()
     name = os.environ.get("FAKE_SCENARIO", "echo")

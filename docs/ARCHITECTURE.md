@@ -26,7 +26,7 @@ relative to `server/`.
 | `api/` | HTTP: routes, auth, middleware, request schemas, error rendering, SSE framing | know anything CLI-specific |
 | `core/` | one request end to end: prompt rendering, tool/format simulation, repair, usage, streaming logic | parse CLI output or spawn processes |
 | `runtime/` | processes: the **only** module that spawns (`runner.py`), limits, workspaces, environment | interpret CLI output |
-| `drivers/` | one package per CLI: invocation, output parsing, exit classification, probe | contain HTTP logic or spawn processes |
+| `drivers/` | one package per CLI: invocation, output parsing, exit classification, certify (build) and probe (startup) | contain HTTP logic or spawn processes |
 | `observability/` | JSON logs, redaction, metrics | — |
 
 Enforced by a ruff banned-API rule and `tests/security/test_source_scan.py`
@@ -137,11 +137,13 @@ Recorded so the reasoning is not lost. Each was agreed during the build.
 | Topic | Decision | Why |
 |---|---|---|
 | Probing lockdown flags | The probe runs the CLI with every lockdown flag and empty stdin and requires the "no input" error; an unknown flag fails. Codex config keys are proven one by one with invalid values | Claude's `--max-turns` and `--system-prompt-file` are hidden from `--help`; Codex ignores unknown `-c` keys silently |
+| Build-time certification | `python -m modelmux certify` runs in the image build and writes `/opt/modelmux/manifest.json`: CLI version, flag/feature/config-key checks, Claude's models. Startup verifies it by hashing the CLI files and the driver's lockdown spec, then checks only login, hardening and (Codex) the account's models | Facts fixed by a pinned binary need checking once, not on every start: Claude startup went from 11 CLI runs to 1, Codex from 12 to 2. The `/model` query (which needs slash commands on) never runs in the server |
+| Runtime hardening check | Startup refuses unless non-root, no capabilities, `no-new-privileges`, read-only root (`MODELMUX_REQUIRE_HARDENING=false` for development only) | How a container is started cannot be certified at build time |
 | Startup failures | Fail fast: any probe failure (including a live "say ok" request) exits the process. No "start not-ready and retry" loop; `PROBE_INTERVAL` removed | The CLI and its flags cannot change inside an immutable, read-only container |
 | Credentials | Provider keys in the environment are never forwarded; the CLI logs in inside its driver-home volume | Keeps secrets out of ModelMux's environment and process tree |
 | Codex system prompt | Passed with `-c model_instructions_file=<0600 file>`, which replaces Codex's built-in agent instructions, instead of being prepended to stdin | Stronger isolation from Codex's agent behaviour |
 | `CODEX_HOME` | Not set; Codex uses `$HOME/.codex` with `HOME` = driver home | Mirrors Claude (`$HOME/.claude`) |
-| Model lists | Claude: aliases and full IDs including `fable`; Codex: the three current models from the official docs | Chosen by the maintainer; override with `MODELMUX_MODELS` |
+| Model lists | Never hand-written, no fallback. Claude: certified at build time from `/model` (first alias per full ID, `[1m]` skipped). Codex: discovered at startup (account-specific) with the cache deleted first and a fresh cache required. `MODELMUX_MODELS` can only narrow the list. The live check passes no `--model` to Claude (account default) and uses the top Codex model | Lists stay current with the CLI; silent fallbacks would serve stale or unavailable models |
 | Extra error codes | `not_found` (404) and `method_not_allowed` (405) | Unknown routes must also return the OpenAI error shape |
 | `Content-Type` check | A route dependency after auth, not middleware | Unauthenticated callers always get 401 first |
 | Stop sequences | Applied to plain-text answers only, never to tool-call or schema JSON | Truncating JSON would corrupt it |

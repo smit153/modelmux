@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -12,7 +13,7 @@ from modelmux import main
 from modelmux.config import Settings
 from modelmux.main import StartupError
 from tests.conftest import TEST_API_KEY
-from tests.fakes import FAKE_ENV_KEYS
+from tests.fakes import FAKE_ENV_KEYS, FIXTURES
 from tests.helpers import assert_openai_error
 
 ClientFactory = Callable[..., TestClient]
@@ -107,18 +108,118 @@ def test_unknown_driver(make_settings: Callable[..., Settings]) -> None:
         main.create_app(make_settings(driver="nosuchdriver"))
 
 
-def test_models_override(make_settings: Callable[..., Settings]) -> None:
-    app = main.create_app(make_settings(models={"fast": "haiku"}))
-    assert list(app.state.pipeline.models) == ["fast"]
+def test_models_discovered_at_startup(make_client: ClientFactory) -> None:
+    client = make_client()
+    assert client.app.state.pipeline.models == {}  # type: ignore[attr-defined]
+    with client:
+        models = client.app.state.pipeline.models  # type: ignore[attr-defined]
+        assert list(models)[:4] == ["sonnet", "opus", "haiku", "fable"]
+
+
+def test_models_filter(make_client: ClientFactory) -> None:
+    with make_client(models=("haiku", "claude-sonnet-5-5")) as client:
+        models = client.app.state.pipeline.models  # type: ignore[attr-defined]
+        assert list(models) == ["haiku", "claude-sonnet-5-5"]
+
+
+def test_models_filter_unknown_stops_startup(make_client: ClientFactory) -> None:
+    client = make_client(models=("gpt-6.1-sol",))
+    with pytest.raises(StartupError, match="does not offer"), client:
+        pass  # pragma: no cover
 
 
 def test_probe_failure_stops_startup(
     make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("FAKE_UNKNOWN_FLAG", "--safe-mode")
+    monkeypatch.setenv("FAKE_PROBE", "claude_fixture")
+    monkeypatch.setenv("FAKE_FIXTURE", str(FIXTURES / "claude" / "auth_error.jsonl"))
+    monkeypatch.setenv("FAKE_EXIT", "1")
     client = make_client()
-    with pytest.raises(StartupError, match="lockdown flag --safe-mode"), client:
+    with pytest.raises(StartupError, match="live check failed: auth"), client:
         pass  # pragma: no cover
+
+
+# ------------------------------------------------------------------ certification
+
+
+def test_startup_skips_certified_checks(
+    make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Version and lockdown flags were certified at build time: a fake that
+    # would now fail them still starts, because startup no longer runs them.
+    monkeypatch.setenv("FAKE_UNKNOWN_FLAG", "--version-check-only")
+    monkeypatch.setenv("FAKE_VERSION", "garbage")
+    log = tmp_path / "queries.jsonl"
+    monkeypatch.setenv("FAKE_MODEL_LOG", str(log))
+    with make_client() as client:
+        assert client.get("/health/ready").json() == {"status": "ready"}
+    assert not log.exists()  # and no /model query either
+
+
+def test_missing_manifest_stops_startup(make_client: ClientFactory, tmp_path: Path) -> None:
+    client = make_client(manifest=tmp_path / "none.json")
+    with pytest.raises(StartupError, match="not certified"), client:
+        pass  # pragma: no cover
+
+
+@pytest.mark.parametrize("content", ["{", "[]", '{"schema_version": 1, "drivers": {"claude": 1}}'])
+def test_broken_manifest_stops_startup(
+    make_client: ClientFactory, tmp_path: Path, content: str
+) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text(content)
+    client = make_client(manifest=path)
+    with pytest.raises(StartupError, match="manifest"), client:
+        pass  # pragma: no cover
+
+
+def test_uncertified_driver_stops_startup(
+    make_client: ClientFactory, manifest: Path, tmp_path: Path
+) -> None:
+    data = json.loads(manifest.read_text())
+    del data["drivers"]["claude"]
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(data))
+    client = make_client(manifest=path)
+    with pytest.raises(StartupError, match="does not certify driver 'claude'"), client:
+        pass  # pragma: no cover
+
+
+def test_changed_cli_binary_stops_startup(make_client: ClientFactory, fake_claude: Path) -> None:
+    fake_claude.write_text(fake_claude.read_text() + "# changed\n")
+    client = make_client()
+    with pytest.raises(StartupError, match="not the certified one"), client:
+        pass  # pragma: no cover
+
+
+def test_changed_lockdown_stops_startup(
+    make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from modelmux.drivers.claude.driver import ClaudeDriver  # noqa: PLC0415
+
+    original = ClaudeDriver.lockdown_spec
+    monkeypatch.setattr(ClaudeDriver, "lockdown_spec", lambda self: (*original(self), "--new"))
+    client = make_client()
+    with pytest.raises(StartupError, match="lockdown settings changed"), client:
+        pass  # pragma: no cover
+
+
+def test_unhardened_container_stops_startup(
+    make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "hardening_problems", lambda: ["runs as root (use ...)"])
+    client = make_client(require_hardening=True)
+    with pytest.raises(StartupError, match="not hardened: runs as root"), client:
+        pass  # pragma: no cover
+
+
+def test_hardening_check_can_be_disabled_loudly(
+    make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(main, "hardening_problems", lambda: ["runs as root (use ...)"])
+    with make_client(require_hardening=False) as client:
+        assert client.get("/health/ready").status_code == 200
+    assert '"event": "hardening_disabled"' in capsys.readouterr().out
 
 
 def test_bad_work_root_stops_startup(make_client: ClientFactory, tmp_path: Path) -> None:

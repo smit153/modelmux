@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import os
 import stat
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 from modelmux_cli import health, release
+from modelmux_cli import stack as stack_module
 from modelmux_cli.commands import up as up_module
 from modelmux_cli.main import main
 from tests.conftest import FakeDocker
@@ -95,6 +98,54 @@ def test_up_is_idempotent(capsys: pytest.CaptureFixture[str], fake_docker: FakeD
     assert code == 0
     assert "already running" in out
     assert "Created an API key" not in out
+
+
+def test_up_running_provider_skips_login_check_and_compose(
+    capsys: pytest.CaptureFixture[str], fake_docker: FakeDocker
+) -> None:
+    # Second `up` with nothing changed: no helper container, no compose up.
+    logged_in(fake_docker, "claude")
+    cli(capsys, "up", "claude")
+    fake_docker.calls.clear()
+    fake_docker.when("compose", "ps", returns=(0, RUNNING, ""))
+    code, out = cli(capsys, "up", "claude")
+    assert code == 0
+    assert "already running" in out
+    assert not [c for c in fake_docker.calls if c[:2] == ("run", "--rm")]
+    assert not fake_docker.called("compose", "up")
+
+
+def test_up_changed_settings_recreate_running_provider(
+    capsys: pytest.CaptureFixture[str], fake_docker: FakeDocker
+) -> None:
+    logged_in(fake_docker, "claude")
+    cli(capsys, "up", "claude")
+    fake_docker.when("compose", "ps", returns=(0, RUNNING, ""))
+    code, out = cli(capsys, "up", "claude", "--port", "claude=9101")
+    assert code == 0
+    assert fake_docker.called("compose", "up")
+    assert "running at http://127.0.0.1:9101/v1" in out
+
+
+def test_up_checks_logins_in_parallel(
+    capsys: pytest.CaptureFixture[str], fake_docker: FakeDocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    active, peak, lock = 0, 0, threading.Lock()
+
+    def slow_check(self: object, provider: object, image: str) -> bool:
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.05)
+        with lock:
+            active -= 1
+        return False
+
+    monkeypatch.setattr(stack_module.Stack, "logged_in", slow_check)
+    code, _ = cli(capsys, "up")
+    assert code == 0
+    assert peak == 2  # claude and codex checked at the same time
 
 
 def test_up_explicit_provider_not_logged_in(

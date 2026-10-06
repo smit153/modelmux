@@ -8,6 +8,7 @@ one chat completion):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -15,10 +16,15 @@ from pathlib import Path
 
 import openai
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from modelmux.config import load_settings
+from modelmux.certification import certify_driver, write_manifest
+from modelmux.config import Settings, load_settings
+from modelmux.drivers.base import ModelInfo
+from modelmux.drivers.claude.driver import ClaudeDriver
 from modelmux.main import create_app
+from modelmux.runtime.runner import resolve_binary
 from modelmux.runtime.workspace import prepare_work_root
 from tests.conftest import TEST_API_KEY
 from tests.helpers import AUTH, chat_body
@@ -34,13 +40,19 @@ def live_client(tmp_path: Path) -> TestClient:
     home = os.environ.get("LIVE_DRIVER_HOME")
     if not home:
         pytest.skip("set LIVE_DRIVER_HOME to the home that holds the Claude login")
+    # Certify the local CLI like the image build does (local, zero cost).
+    manifest = tmp_path / "manifest.json"
+    driver = ClaudeDriver(resolve_binary("claude", Path(binary)))
+    write_manifest(manifest, [asyncio.run(certify_driver(driver))])
     settings = load_settings(
         driver="claude",
         api_keys=TEST_API_KEY,
         cli_path=Path(binary),
         driver_home=Path(home),
         work_root=tmp_path / "work",
-        models={"sonnet": "sonnet"},  # live tests never use other models
+        manifest=manifest,
+        require_hardening=False,  # a developer machine, not the container
+        models=("sonnet",),  # live tests never use other models
     )
     return TestClient(create_app(settings), raise_server_exceptions=False)
 
@@ -76,10 +88,10 @@ def test_live_stream(tmp_path: Path) -> None:
         cli_path=Path(binary),
         driver_home=Path(home),
         work_root=tmp_path / "work",
-        models={"sonnet": "sonnet"},
+        models=("sonnet",),
     )
     prepare_work_root(settings.work_root)
-    client = TestClient(create_app(settings))
+    client = TestClient(_app_without_probe(settings))
     sdk = openai.OpenAI(
         base_url="http://testserver/v1", api_key=TEST_API_KEY, http_client=client, max_retries=0
     )
@@ -102,6 +114,14 @@ def test_live_stream(tmp_path: Path) -> None:
     assert usage.completion_tokens > 0
 
 
+def _app_without_probe(settings: Settings) -> FastAPI:
+    """The live app without its startup probe (saves a request). Models are
+    normally discovered by the probe, so sonnet is set directly."""
+    app = create_app(settings)
+    app.state.pipeline.models = {"sonnet": ModelInfo("sonnet", "sonnet")}
+    return app
+
+
 def _sdk_without_probe(tmp_path: Path) -> openai.OpenAI:
     """An SDK client on a live app whose startup probe is skipped (saves a request)."""
     binary = shutil.which("claude")
@@ -114,13 +134,13 @@ def _sdk_without_probe(tmp_path: Path) -> openai.OpenAI:
         cli_path=Path(binary),
         driver_home=Path(home),
         work_root=tmp_path / "work",
-        models={"sonnet": "sonnet"},
+        models=("sonnet",),
     )
     prepare_work_root(settings.work_root)
     return openai.OpenAI(
         base_url="http://testserver/v1",
         api_key=TEST_API_KEY,
-        http_client=TestClient(create_app(settings)),
+        http_client=TestClient(_app_without_probe(settings)),
         max_retries=0,
     )
 

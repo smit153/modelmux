@@ -7,6 +7,13 @@ UUIDs, timestamps and local paths replaced with fixed values):
   (run with a planted CLAUDE.md and hook; both were ignored)
 - `model_not_found.jsonl`: invalid model name (API error, zero cost)
 - `commands_changed.jsonl`: emitted under ModelMux's minimal environment
+- `model_report_haiku.jsonl`, `model_report_default.jsonl`: the `/model`
+  discovery query (stdin `/model`, every lockdown flag except
+  `--disable-slash-commands`, `--model haiku` / no `--model`), recorded in
+  the image under the server's exact environment with an empty driver home
+  (no login). Answered locally: built-in `commands_changed`, init with the
+  resolved model, a `<synthetic>` reply, zero turns and cost. Not anonymised:
+  it holds no IDs worth hiding.
 - `tool_use_read.jsonl`: one-off capture with `--tools Read` in an empty
   directory: `content_block_start` tool_use, `tool_result`, `error_max_turns`
 

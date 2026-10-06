@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from collections.abc import Callable, Iterator
@@ -12,8 +13,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from modelmux.certification import certify_driver, write_manifest
 from modelmux.config import Settings, load_settings
+from modelmux.drivers.registry import load_driver_class
 from modelmux.main import create_app
+from modelmux.runtime.runner import resolve_binary
 from tests.fakes import FAKE_ENV_KEYS, install_fake_cli
 
 TEST_API_KEY = "test-key-" + "a" * 40
@@ -84,9 +88,28 @@ def fake_binary(tmp_path: Path, driver_name: str) -> Path:
     return install_fake_cli(tmp_path / "bin", driver_name)
 
 
+@pytest.fixture(scope="session")
+def manifest(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A manifest certifying the fake CLIs, made once like the image build does.
+
+    Every test installs an identical wrapper, so the file hashes match.
+    """
+    directory = tmp_path_factory.mktemp("certified")
+    certificates = []
+    for name in ("claude", "codex"):
+        cls = load_driver_class(name)
+        binary = resolve_binary(cls.binary_name, install_fake_cli(directory / "bin", name))
+        certificates.append(asyncio.run(certify_driver(cls(binary), source_env={})))
+    path = directory / "manifest.json"
+    write_manifest(path, certificates)
+    return path
+
+
 @pytest.fixture
-def make_settings(tmp_path: Path, driver_name: str, fake_binary: Path) -> Callable[..., Settings]:
-    """Settings pointing at the fake CLI and private tmp dirs."""
+def make_settings(
+    tmp_path: Path, driver_name: str, fake_binary: Path, manifest: Path
+) -> Callable[..., Settings]:
+    """Settings pointing at the fake CLI, the fake manifest and private tmp dirs."""
 
     def factory(**overrides: Any) -> Settings:
         values: dict[str, Any] = {
@@ -95,6 +118,10 @@ def make_settings(tmp_path: Path, driver_name: str, fake_binary: Path) -> Callab
             "cli_path": fake_binary,
             "work_root": tmp_path / "work",
             "driver_home": tmp_path / "home",
+            "manifest": manifest,
+            # The test process is not a hardened container; the check itself
+            # is tested in tests/unit/test_hardening.py.
+            "require_hardening": False,
             "kill_grace": 0.3,
         }
         values.update(overrides)

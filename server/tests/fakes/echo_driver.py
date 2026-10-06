@@ -8,6 +8,8 @@ from __future__ import annotations
 from typing import ClassVar
 
 from modelmux.drivers.base import (
+    Certified,
+    CertifyResult,
     Driver,
     DriverRequest,
     Invocation,
@@ -24,11 +26,15 @@ class EchoDriver(Driver):
     binary_name: ClassVar[str] = "fake-cli"
     supported_versions: ClassVar[str] = ">=0"
 
-    def models(self) -> list[ModelInfo]:
-        return [ModelInfo(id="echo-1", cli_model="echo-1")]
+    async def certify(self, ctx: ProbeContext) -> CertifyResult:
+        models = (ModelInfo(id="echo-1", cli_model="echo-1"),)
+        return CertifyResult(ok=True, reason="ok", version="1.0.0", models=models)
 
-    async def probe(self, ctx: ProbeContext) -> ProbeResult:
-        return ProbeResult(ok=True, reason="ok")
+    async def probe(self, ctx: ProbeContext, certified: Certified) -> ProbeResult:
+        return ProbeResult(ok=True, reason="ok", models=certified.models or ())
+
+    def lockdown_spec(self) -> tuple[str, ...]:
+        return ("--model", "<model>")
 
     def build_invocation(self, req: DriverRequest) -> Invocation:
         return Invocation(argv=self.argv("--model", req.cli_model), stdin=req.transcript.encode())

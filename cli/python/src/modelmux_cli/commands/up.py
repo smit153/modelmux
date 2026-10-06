@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 
 from modelmux_cli import health
 from modelmux_cli.config import save_config
@@ -16,7 +17,7 @@ from modelmux_cli.secrets_store import ensure_api_key
 from modelmux_cli.stack import build_compose, resolve_image, service_name, write_compose
 
 READY_TIMEOUT = 240.0
-POLL_INTERVAL = 2.0
+POLL_INTERVAL = 0.5
 COMPOSE_UP_TIMEOUT = 300.0
 
 
@@ -79,8 +80,11 @@ def start_and_wait(ctx: Context, provider: Provider) -> None:
     console.success(f"{provider.display_name} is running at {health.base_url(port)}/v1")
 
 
-def prepare(ctx: Context, image: str) -> None:
-    """Docker, API key, compose file, image and login volumes: all idempotent."""
+def prepare(ctx: Context, image: str) -> bool:
+    """Docker, API key, compose file, image and login volumes: all idempotent.
+
+    Returns True if the compose file changed (so running containers must be
+    recreated to pick it up)."""
     console, stack = ctx.console, ctx.stack
     console.step("Checking Docker...")
     ctx.docker.check_available()
@@ -88,12 +92,45 @@ def prepare(ctx: Context, image: str) -> None:
     key = ensure_api_key(ctx.home)
     if key.created:
         console.success("Created an API key for your clients (see it with: modelmux key show).")
-    write_compose(ctx.home, build_compose(ctx.providers, ctx.config, image, key.path))
+    changed = write_compose(ctx.home, build_compose(ctx.providers, ctx.config, image, key.path))
     if not stack.image_present(image):
         console.step(f"Downloading the ModelMux server image {image} (first time only, ~1.4 GB)...")
         stack.ensure_image(image)
     for provider in ctx.providers.values():
         stack.ensure_volume(provider)
+    return changed or key.created
+
+
+def running_and_ready(ctx: Context, providers: list[Provider]) -> set[str]:
+    """Providers whose container runs and answers /health/ready. Their login
+    is proven (the server's startup check made a real request), so no helper
+    container is needed to check it again."""
+    states = ctx.stack.states()
+    return {
+        p.name for p in providers
+        if (s := states.get(service_name(p))) is not None and s.state == "running"
+        and health.ready(ctx.config.port(p.name))
+    }  # fmt: skip
+
+
+def check_logins(ctx: Context, providers: list[Provider], image: str) -> dict[str, bool]:
+    """Logged in or not, per provider: running ones count as logged in, the
+    rest are checked in parallel helper containers."""
+    ready = running_and_ready(ctx, providers)
+    unknown = [p for p in providers if p.name not in ready]
+    with ThreadPoolExecutor(max_workers=max(1, len(unknown))) as pool:
+        answers = list(pool.map(lambda p: ctx.stack.logged_in(p, image), unknown))
+    return {p.name: True for p in providers if p.name in ready} | {
+        p.name: answer for p, answer in zip(unknown, answers, strict=True)
+    }
+
+
+def wait_all(ctx: Context, providers: list[Provider]) -> None:
+    """Wait for every provider at once; report the first failure afterwards."""
+    with ThreadPoolExecutor(max_workers=max(1, len(providers))) as pool:
+        futures = [pool.submit(start_and_wait, ctx, p) for p in providers]
+    for future in futures:
+        future.result()  # re-raises the provider's CliError
 
 
 def check_ports(ctx: Context, providers: list[Provider]) -> None:
@@ -119,11 +156,10 @@ def run(args: argparse.Namespace, console: Console) -> int:
             hint=f"Choose from: {', '.join(sorted(providers))}.",
         )
     image = apply_settings(ctx, args)
-    prepare(ctx, image)
-
+    compose_changed = prepare(ctx, image)
     targets = [providers[name] for name in (args.providers or sorted(providers))]
     console.step("Checking logins...")
-    logged_in = {p.name: ctx.stack.logged_in(p, image) for p in targets}
+    logged_in = check_logins(ctx, targets, image)
     missing = [p for p in targets if not logged_in[p.name]]
     if args.providers and missing:
         raise CliError(
@@ -135,22 +171,20 @@ def run(args: argparse.Namespace, console: Console) -> int:
         console.success("ModelMux is set up. No provider is logged in yet.")
         console.step(f"Next: modelmux login {targets[0].name}")
         return 0
-
-    check_ports(ctx, to_start)
-    states = ctx.stack.states()
-    was_running = {
-        p.name for p in to_start
-        if (s := states.get(service_name(p))) is not None and s.state == "running"
-    }  # fmt: skip
-    ctx.stack.compose("up", "-d", *(service_name(p) for p in to_start), timeout=COMPOSE_UP_TIMEOUT)
+    ready = set() if compose_changed else running_and_ready(ctx, to_start)
+    waiting = [p for p in to_start if p.name not in ready]
+    if waiting:
+        check_ports(ctx, waiting)
+        ctx.stack.compose(
+            "up", "-d", *(service_name(p) for p in to_start), timeout=COMPOSE_UP_TIMEOUT
+        )
     for provider in to_start:
-        port = ctx.config.port(provider.name)
-        if provider.name in was_running and health.ready(port):
+        if provider.name in ready:
+            port = ctx.config.port(provider.name)
             console.success(
                 f"{provider.display_name} is already running at {health.base_url(port)}/v1"
             )
-        else:
-            start_and_wait(ctx, provider)
+    wait_all(ctx, waiting)
     for provider in missing:
         console.step(f"{provider.display_name} is not logged in: modelmux login {provider.name}")
     console.step("Configure your tools: modelmux config litellm (or openai-python, langchain)")

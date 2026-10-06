@@ -17,3 +17,9 @@ Hand-written from the source schema:
   `collab_tool_call`, `unknown_exec_item`, `unknown_exec_event`
 - failures: `rate_limited`, `usage_limit`, `context_too_long`, `overloaded`,
   `model_not_found` (message texts are plausible, not captured)
+
+Model discovery:
+
+- `model_catalog.json`: `codex debug models --bundled` from codex-cli 0.159.2,
+  trimmed to `slug`, `display_name`, `visibility`, `supported_in_api` and
+  `priority` (the real output also carries prompts and settings, ~650 KB)

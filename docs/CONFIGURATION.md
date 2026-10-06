@@ -15,7 +15,9 @@ that names the setting but never prints its value. In Docker, put them in
 | `MODELMUX_CLI_PATH` | found on `PATH` | Absolute path to the CLI binary. It must exist, be executable, and not be world-writable (nor in a world-writable directory without the sticky bit). |
 | `MODELMUX_DRIVER_HOME` | `/home/modelmux/driver-home` | Absolute path used as the CLI's `HOME`. Holds its login state (`.claude/`, `.codex/`). One per driver; never share it. |
 | `MODELMUX_WORK_ROOT` | `/tmp/modelmux` | Absolute path for per-request workspaces (mode `0700`, random names, removed after each request; leftovers are removed at startup). |
-| `MODELMUX_MODELS` | driver default | JSON object mapping public model IDs to CLI model values, e.g. `{"fast": "haiku", "smart": "opus"}`. Replaces the default list. IDs must match `^[a-zA-Z0-9._:-]{1,64}$`; values must match `^[a-zA-Z0-9._:\-\[\]]{1,64}$` and must not start with `-`. |
+| `MODELMUX_MANIFEST` | `/opt/modelmux/manifest.json` | Absolute path to the manifest written by `python -m modelmux certify` at image build time. Startup refuses to run if it is missing, malformed, or does not match the CLI binary and the driver's lockdown settings (see [Certification](#certification)). |
+| `MODELMUX_REQUIRE_HARDENING` | `true` | Refuse to start unless the container runs hardened: non-root, no Linux capabilities, `no-new-privileges`, read-only root filesystem. `false` is for development outside a container only, and logs a warning. |
+| `MODELMUX_MODELS` | all discovered | Comma-separated model IDs to allow, e.g. `sonnet,haiku`. It can only **narrow** the list the CLI reports at startup (see [Models](#models)); naming a model the CLI does not offer stops startup. The 0.1 JSON-map format is rejected with an explanation. |
 
 ## Inbound authentication
 
@@ -93,6 +95,42 @@ codes and error codes, never content, keys, headers, argv or environment.
 Set by the image and normally left alone: `MODELMUX_HOST=0.0.0.0`,
 `MODELMUX_PORT=8000`, `MODELMUX_DRIVER_HOME=/home/modelmux/driver-home`,
 `MODELMUX_WORK_ROOT=/tmp/modelmux`, `DISABLE_AUTOUPDATER=1`.
+
+## Certification
+
+Facts fixed by the pinned CLI binaries are checked **once, when the image is
+built**, instead of at every start. The Dockerfile runs
+`python -m modelmux certify`, which for each driver checks the CLI version,
+that every lockdown flag (and, for Codex, every feature name and config key)
+is accepted, and, where the binary alone decides them, the models. It writes
+`/opt/modelmux/manifest.json` (read-only, owned by root).
+
+At startup the server only:
+
+1. verifies the manifest: the sha256 of the CLI files (Claude's binary;
+   Codex's launcher and native binary) and of the driver's lockdown settings
+   must match, so a different CLI or changed flags cannot run uncertified,
+2. checks the container's hardening (`MODELMUX_REQUIRE_HARDENING`),
+3. discovers models that depend on the account (Codex),
+4. makes one tiny live request to prove the login.
+
+To run the server outside the image, certify your CLIs first:
+`python -m modelmux certify --output manifest.json --driver claude=/path/to/claude`,
+then set `MODELMUX_MANIFEST`.
+
+## Models
+
+There is no hand-written model list, and no fallback: if the models cannot
+be determined, the service does not start.
+
+| Driver | Where the models come from | Published |
+|---|---|---|
+| `claude` | **Certification.** `/model` sent to `claude -p` is answered locally by the CLI (no login, no API call; the run must report 0 turns, 0 cost, 0 tokens and a synthetic reply). Its "Available: ..." list gives the aliases; one query per alias reads the full ID it resolves to. Slash commands are enabled only for these build-time queries; the running server never enables them. | Each alias that resolves to a new full ID (`sonnet`, `opus`, `haiku`, `fable` today; `default`, `best` and `opusplan` drop out as duplicates, `[1m]` variants are skipped), then those full IDs |
+| `codex` | **Startup**, because they depend on the account: `codex debug models` with the driver home's login. Codex silently falls back to a cached or bundled list, so the driver deletes `$HOME/.codex/models_cache.json` first and accepts the list only if the CLI wrote a fresh cache (same CLI version, same models) during the run. | Models the catalog marks `visibility: list` and `supported_in_api`, highest priority first |
+
+A Claude model the CLI supports but your account cannot use fails at request
+time with `404 model_not_found`. The startup live check passes no `--model`
+to Claude (the account's own default is used) and uses the top Codex model.
 
 ## Environment passed to the CLI
 

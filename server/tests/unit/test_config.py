@@ -76,25 +76,20 @@ def test_paths_must_be_absolute(monkeypatch: pytest.MonkeyPatch, var: str) -> No
         load_settings()
 
 
-def test_models_json_map(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MODELMUX_MODELS", '{"sonnet": "sonnet", "big": "claude-opus-4[1m]"}')
-    assert load_settings().models == {"sonnet": "sonnet", "big": "claude-opus-4[1m]"}
+def test_models_filter_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MODELMUX_MODELS", " sonnet, claude-haiku-4-5-20251001 ,")
+    assert load_settings().models == ("sonnet", "claude-haiku-4-5-20251001")
+
+
+def test_models_old_json_map_explained(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MODELMUX_MODELS", '{"sonnet": "sonnet"}')
+    with pytest.raises(ConfigError, match="JSON maps are no longer supported"):
+        load_settings()
 
 
 @pytest.mark.parametrize(
     "raw",
-    [
-        "not json",
-        "[]",
-        "{}",
-        '{"a": "--help"}',
-        '{"a": "-x"}',
-        '{"a": "has space"}',
-        '{"a": "x;rm"}',
-        '{"bad id!": "sonnet"}',
-        '{"a": 1}',
-        '{"a": "' + "x" * 65 + '"}',
-    ],
+    [",", " , ", "has space", "x;rm", "bad id!", "sonnet[1m]", "a,a", "x" * 65],
 )
 def test_models_rejected(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
     monkeypatch.setenv("MODELMUX_MODELS", raw)

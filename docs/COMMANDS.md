@@ -179,9 +179,9 @@ docker run --rm -v /tmp:/work aquasec/trivy \
 ```bash
 # 1. edit the version in docker/cli/package.json
 cd docker/cli && npm install --package-lock-only --no-audit --no-fund && cd ../..
-# 2. rebuild with the matching build argument (or update the ARG default)
+# 2. rebuild: the build certifies the new CLI and fails if a lockdown flag changed
 $C build --build-arg CLAUDE_CODE_VERSION=<new>
-# 3. restart; the startup probe re-verifies every lockdown flag
+# 3. restart; startup checks the binary against the new certificate
 $C up -d modelmux-claude && $C logs modelmux-claude | grep -E "probe_ok|probe_failed"
 ```
 
