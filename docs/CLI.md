@@ -5,7 +5,7 @@ Docker for you, guides you through each provider's login, and prints
 ready-to-paste config for your tools.
 
 ```bash
-pipx install modelmux-cli        # or run it without installing: uvx modelmux-cli
+pipx install modelmux-cli        # or run it without installing: uvx --from modelmux-cli modelmux
 modelmux up                      # prepare everything, start logged-in providers
 modelmux login claude            # guided login, then a real test
 modelmux config litellm          # paste into your LiteLLM config

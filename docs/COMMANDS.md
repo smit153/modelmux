@@ -7,7 +7,7 @@ root unless a step says otherwise.
 ## With the `modelmux` CLI
 
 ```bash
-pipx install modelmux-cli                 # or: uvx modelmux-cli <command>
+pipx install modelmux-cli                 # or: uvx --from modelmux-cli modelmux <command>
 modelmux up [claude|codex] [--image REF] [--port claude=9101]
 modelmux login claude [--method console] [--no-browser] [--raw] [--force]
 modelmux login codex  [--method api-key]

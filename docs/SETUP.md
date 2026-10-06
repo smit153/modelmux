@@ -9,7 +9,7 @@ without the explanations, in [COMMANDS.md](COMMANDS.md).
 If you have Docker and Python 3.10+, the CLI does every step below for you:
 
 ```bash
-pipx install modelmux-cli      # or: uvx modelmux-cli
+pipx install modelmux-cli      # or: uvx --from modelmux-cli modelmux
 modelmux up                    # API key, settings, image, login volumes
 modelmux login claude          # guided login, then a real test
 modelmux config litellm        # config for your tools

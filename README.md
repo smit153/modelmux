@@ -57,7 +57,7 @@ safely, report accurately.
 With the `modelmux` CLI (needs Docker and Python 3.10+):
 
 ```bash
-pipx install modelmux-cli          # or run it without installing: uvx modelmux-cli
+pipx install modelmux-cli          # or run it without installing: uvx --from modelmux-cli modelmux
 modelmux up                        # set up everything, start logged-in providers
 modelmux login claude              # guided login (opens your browser), then a real test
 modelmux config litellm            # ready-to-paste config for your tools

@@ -5,7 +5,7 @@ AI coding CLIs (Claude Code, Codex) as a secure, OpenAI-compatible API on your
 own machine.
 
 ```bash
-pipx install modelmux-cli      # or: uvx modelmux-cli
+pipx install modelmux-cli      # or: uvx --from modelmux-cli modelmux
 modelmux up                    # set up Docker containers, start logged-in providers
 modelmux login claude          # guided login (opens your browser), then a real test
 modelmux config litellm        # ready-to-paste config for LiteLLM, OpenAI SDK, LangChain...
