@@ -4,6 +4,7 @@ import io
 
 import pytest
 
+from modelmux_cli import console as console_module
 from modelmux_cli import redact as redact_module
 from modelmux_cli.console import Console
 from modelmux_cli.redact import MASK, redact, register_secret
@@ -48,6 +49,7 @@ def test_no_color_when_not_a_tty() -> None:
 def test_color_on_tty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setattr(console_module, "_enable_windows_ansi", lambda: True)
     console, out, _ = make(tty=True)
     console.success("x")
     assert "\033[32m" in out.getvalue()

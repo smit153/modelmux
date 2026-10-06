@@ -66,9 +66,9 @@ def test_input_text(runner: FakeRunner) -> None:
 
 def test_compose_wrapper(runner: FakeRunner) -> None:
     docker, _ = make(runner)
-    docker.compose("modelmux", Path("/cfg/compose.yaml"), "up", "-d")
-    assert runner.calls[0][0][1:] == ["compose", "-p", "modelmux", "-f", "/cfg/compose.yaml",
-                                      "up", "-d"]  # fmt: skip
+    file = Path("/cfg/compose.yaml")
+    docker.compose("modelmux", file, "up", "-d")
+    assert runner.calls[0][0][1:] == ["compose", "-p", "modelmux", "-f", str(file), "up", "-d"]
 
 
 def test_rejects_nul(runner: FakeRunner) -> None:
