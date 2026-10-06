@@ -6,7 +6,6 @@ setting but never include its value, so secrets cannot leak into startup logs.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
@@ -71,7 +70,13 @@ class Settings(BaseSettings):
     cli_path: Path | None = None
     driver_home: Path = Path("/home/modelmux/driver-home")
     work_root: Path = Path("/tmp/modelmux")  # noqa: S108 - per-request dirs, mode 0700
-    models: Annotated[dict[str, str] | None, NoDecode] = None
+    # Build-time certification of the CLI (see modelmux.certification).
+    manifest: Path = Path("/opt/modelmux/manifest.json")
+    # Refuse to start unless the container runs hardened (non-root, no
+    # capabilities, no-new-privileges, read-only root). Only for development.
+    require_hardening: bool = True
+    # Optional: restrict the models discovered from the CLI (comma-separated IDs).
+    models: Annotated[tuple[str, ...] | None, NoDecode] = None
 
     # Inbound auth
     api_keys: Annotated[tuple[SecretStr, ...], NoDecode] = ()
@@ -123,7 +128,7 @@ class Settings(BaseSettings):
             raise ValueError("must be a driver name matching ^[a-z][a-z0-9_-]{0,31}$")
         return value
 
-    @field_validator("cli_path", "driver_home", "work_root")
+    @field_validator("cli_path", "driver_home", "work_root", "manifest")
     @classmethod
     def _check_absolute(cls, value: Path | None) -> Path | None:
         if value is not None and not value.is_absolute():
@@ -135,19 +140,22 @@ class Settings(BaseSettings):
     def _parse_models(cls, value: Any) -> Any:
         if value is None or value == "":
             return None
-        if isinstance(value, str):
-            try:
-                value = json.loads(value)
-            except json.JSONDecodeError:
-                raise ValueError("must be a JSON object mapping public IDs to CLI models") from None
-        if not isinstance(value, dict) or not value:
-            raise ValueError("must be a non-empty JSON object mapping public IDs to CLI models")
-        for public_id, cli_model in value.items():
-            if not isinstance(public_id, str) or not isinstance(cli_model, str):
-                raise ValueError("keys and values must be strings")
-            validate_model_id(public_id)
-            validate_cli_model(cli_model)
-        return value
+        if isinstance(value, str) and value.lstrip().startswith("{"):
+            # The 0.1 format (a JSON map) is gone: models come from the CLI now.
+            raise ValueError(
+                "must be a comma-separated list of model IDs the CLI offers, "
+                "e.g. sonnet,haiku (JSON maps are no longer supported)"
+            )
+        items = _split_csv(value)
+        if not items:
+            raise ValueError("must list at least one model ID")
+        for item in items:
+            if not isinstance(item, str):
+                raise ValueError("model IDs must be strings")
+            validate_model_id(item)
+        if len(set(items)) != len(items):
+            raise ValueError("lists a model ID twice")
+        return tuple(items)
 
     @field_validator("api_keys", mode="before")
     @classmethod

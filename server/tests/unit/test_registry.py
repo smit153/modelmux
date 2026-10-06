@@ -10,7 +10,6 @@ from modelmux.drivers import registry
 from modelmux.drivers.base import Driver, ModelInfo
 from modelmux.drivers.registry import (
     DriverLoadError,
-    create_driver,
     load_driver_class,
     resolve_models,
 )
@@ -121,42 +120,29 @@ def test_invalid_driver_classes(
         load_driver_class(name)
 
 
-def test_resolve_default_models() -> None:
-    models = resolve_models(EchoDriver(BIN), None)
-    assert models == {"echo-1": ModelInfo("echo-1", "echo-1")}
+ECHO = ModelInfo("echo-1", "echo-1")
 
 
-def test_resolve_override() -> None:
-    models = resolve_models(EchoDriver(BIN), {"fast": "haiku", "smart": "claude-x[1m]"})
-    assert models["fast"].cli_model == "haiku"
-    assert list(models) == ["fast", "smart"]
+def test_resolve_discovered_models() -> None:
+    assert resolve_models("echo", [ECHO], None) == {"echo-1": ECHO}
 
 
-class EmptyModels(EchoDriver):
-    def models(self) -> list[ModelInfo]:
-        return []
-
-
-class DupModels(EchoDriver):
-    def models(self) -> list[ModelInfo]:
-        return [ModelInfo("a", "a"), ModelInfo("a", "b")]
-
-
-class FlagModel(EchoDriver):
-    def models(self) -> list[ModelInfo]:
-        return [ModelInfo("a", "--dangerous")]
-
-
-class BadId(EchoDriver):
-    def models(self) -> list[ModelInfo]:
-        return [ModelInfo("has space", "a")]
+def test_resolve_filter_only_restricts() -> None:
+    found = [ModelInfo("a", "a"), ModelInfo("b", "b"), ModelInfo("c", "c[1m]")]
+    assert list(resolve_models("echo", found, ["c", "a"])) == ["a", "c"]  # discovery order
+    with pytest.raises(DriverLoadError, match="names 'z', which the echo CLI does not offer"):
+        resolve_models("echo", found, ["a", "z"])
 
 
 @pytest.mark.parametrize(
-    ("cls", "message"),
-    [(EmptyModels, "no models"), (DupModels, "twice"), (FlagModel, "invalid model"),
-     (BadId, "invalid model")],
-)  # fmt: skip
-def test_invalid_model_lists(cls: type[EchoDriver], message: str) -> None:
+    ("models", "message"),
+    [
+        ([], "discovered no models"),
+        ([ModelInfo("a", "a"), ModelInfo("a", "b")], "twice"),
+        ([ModelInfo("a", "--dangerous")], "invalid model"),
+        ([ModelInfo("has space", "a")], "invalid model"),
+    ],
+)
+def test_invalid_discovered_models(models: list[ModelInfo], message: str) -> None:
     with pytest.raises(DriverLoadError, match=message):
-        create_driver(cls, BIN)
+        resolve_models("echo", models, None)

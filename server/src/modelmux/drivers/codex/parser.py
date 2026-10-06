@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from modelmux.drivers.events import (
@@ -148,3 +150,73 @@ def parse_line(line: bytes) -> list[NormalizedEvent]:
     if looks_like_execution(event_type):
         return [ToolAttempt(kind=f"event.{sanitize_detail(event_type, 48)}", detail="")]
     return [Ignored(sanitize_detail(event_type, 64))]
+
+
+# ---------------------------------------------------------------- model discovery
+#
+# ``codex debug models`` prints the model catalog as one JSON object (verified
+# with 0.159.2). With a login it refreshes the catalog from OpenAI and writes
+# it to ``$HOME/.codex/models_cache.json`` (with ``fetched_at`` and
+# ``client_version``); without a login or network it silently prints the
+# catalog bundled in the binary and writes no cache. The cache is how the
+# driver tells a live list from a stale one.
+
+VISIBLE = "list"
+
+
+@dataclass(frozen=True)
+class CatalogModel:
+    slug: str
+    visible: bool
+    priority: int
+
+
+@dataclass(frozen=True)
+class CatalogCache:
+    fetched_at: datetime
+    client_version: str
+    slugs: frozenset[str]
+
+
+def _catalog_entries(data: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+        return None
+    entries: list[dict[str, Any]] = []
+    for entry in data["models"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("slug"), str):
+            return None
+        entries.append(entry)
+    return entries
+
+
+def parse_model_catalog(raw: bytes) -> list[CatalogModel] | None:
+    """The catalog's models, ordered by priority; None if it is not a catalog."""
+    try:
+        entries = _catalog_entries(json.loads(raw))
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if entries is None:
+        return None
+    models = [
+        CatalogModel(
+            slug=e["slug"],
+            visible=e.get("visibility") == VISIBLE and e.get("supported_in_api") is True,
+            priority=e["priority"] if isinstance(e.get("priority"), int) else 1_000_000,
+        )
+        for e in entries
+    ]
+    return sorted(models, key=lambda m: m.priority)
+
+
+def parse_model_cache(raw: bytes) -> CatalogCache | None:
+    """The metadata of ``models_cache.json``; None if unreadable."""
+    try:
+        data = json.loads(raw)
+        entries = _catalog_entries(data)
+        fetched_at = datetime.fromisoformat(data["fetched_at"])
+        version = data["client_version"]
+    except (ValueError, UnicodeDecodeError, RecursionError, KeyError, TypeError):
+        return None
+    if entries is None or not isinstance(version, str) or fetched_at.tzinfo is None:
+        return None
+    return CatalogCache(fetched_at, version, frozenset(e["slug"] for e in entries))

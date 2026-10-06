@@ -9,8 +9,10 @@ partial-message stream, which arrives before the tool input is complete.
 from __future__ import annotations
 
 import json
+import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from modelmux.drivers.events import (
@@ -268,3 +270,108 @@ def parse_line(line: bytes) -> list[NormalizedEvent]:
     if looks_like_execution(event_type):
         return [ToolAttempt(kind=f"event.{sanitize_detail(event_type, 48)}", detail="")]
     return [Ignored(sanitize_detail(event_type, 64))]
+
+
+# ---------------------------------------------------------------- model discovery
+#
+# ``claude -p`` answers ``/model`` locally (verified with 2.1.285): the init
+# event names the full model ID that ``--model`` resolved to, a synthetic
+# assistant message (model "<synthetic>", zero tokens) carries the text, and
+# the result reports zero turns and zero cost. The text ends with
+# "Available: sonnet, opus, ..., or a full model ID."
+
+SYNTHETIC_MODEL = "<synthetic>"
+_AVAILABLE_RE = re.compile(r"Available: ([^\n]+?), or a full model ID\.")
+_ALIAS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,63}$")
+
+
+@dataclass(frozen=True)
+class ModelReport:
+    """What one ``/model`` query said: the resolved model and the reply text."""
+
+    model: str
+    text: str
+
+
+def parse_model_report(lines: Sequence[bytes]) -> ModelReport | str:
+    """Read a ``/model`` query's output. Returns the report, or why it is unusable.
+
+    Fails closed: any tool signal, any provider failure, or any sign that a
+    real model request was made (turns, cost, tokens, a non-synthetic reply)
+    makes the output unusable.
+    """
+    model: str | None = None
+    text: str | None = None
+    for line in lines:
+        try:
+            data = json.loads(line)
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            data = None
+        if isinstance(data, dict) and _builtin_commands_only(data):
+            continue  # expected here: the query runs with slash commands on
+        if problem := _line_problem(line):
+            return problem
+        if not isinstance(data, dict):
+            continue
+        kind = data.get("type")
+        if kind == "system" and data.get("subtype") == "init":
+            model = _str(data.get("model"))
+        elif kind == "assistant":
+            message = data.get("message")
+            if not isinstance(message, dict) or message.get("model") != SYNTHETIC_MODEL:
+                return "model query made a real model request"
+        elif kind == "result":
+            if not _free_result(data):
+                return "model query made a real model request"
+            text = _str(data.get("result"))
+    if model is None or text is None:
+        return "model query gave an unexpected response"
+    return ModelReport(model=model, text=text)
+
+
+def _line_problem(line: bytes) -> str | None:
+    """The normal parser's verdict on one line: tool signals and failures."""
+    for event in parse_line(line):
+        if isinstance(event, ToolAttempt):
+            return "model query triggered the sandbox tripwire"
+        if isinstance(event, ProviderFailure):
+            return f"model query failed: {event.kind}"
+    return None
+
+
+def _builtin_commands_only(data: dict[str, Any]) -> bool:
+    """A ``commands_changed`` event listing only the CLI's built-in commands.
+
+    With slash commands enabled (only for ``/model``), Claude Code 2.1.285
+    announces its built-in commands. This is accepted for the model query
+    alone; the other guards (no tools or MCP servers in init, zero turns,
+    cost and tokens, a synthetic reply) still apply. Any command that is not
+    marked built-in (user, plugin or MCP commands) still trips the wire, and
+    real requests keep the strict rule in ``_system``.
+    """
+    if data.get("type") != "system" or data.get("subtype") != "commands_changed":
+        return False
+    commands = data.get("commands")
+    return isinstance(commands, list) and all(
+        isinstance(c, dict) and c.get("builtin") is True for c in commands
+    )
+
+
+def _free_result(data: dict[str, Any]) -> bool:
+    usage = data.get("usage")
+    tokens = 0
+    if isinstance(usage, dict):
+        tokens = _int(usage.get("input_tokens")) + _int(usage.get("output_tokens"))
+    cost = data.get("total_cost_usd")
+    return data.get("num_turns") == 0 and cost == 0 and tokens == 0
+
+
+def parse_model_list(text: str) -> list[str] | None:
+    """The aliases in ``/model``'s "Available: ..." sentence, in order; None if absent."""
+    match = _AVAILABLE_RE.search(text)
+    if match is None:
+        return None
+    names = [name.strip() for name in match.group(1).split(",")]
+    if not names or not all(_ALIAS_RE.fullmatch(name) for name in names):
+        return None
+    return names

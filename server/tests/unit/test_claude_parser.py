@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from modelmux.drivers.claude import parser
 from modelmux.drivers.claude.parser import classify_failure, parse_line
 from modelmux.drivers.events import (
     Completed,
@@ -204,3 +205,99 @@ def test_classify(code: str | None, status: int | None, message: str, kind: Fail
 def test_deeply_nested_line_never_raises() -> None:
     line = ('{"type":"assistant","x":' + "[" * 100_000 + "]" * 100_000 + "}").encode()
     assert parse_line(line) == [ProviderFailure(FailureKind.PROTOCOL, "unparseable output line")]
+
+
+# ------------------------------------------------------------------ model discovery
+
+
+def _lines(name: str) -> list[bytes]:
+    return (FIXTURES / name).read_bytes().splitlines()
+
+
+@pytest.mark.parametrize(
+    ("fixture", "model"),
+    [("model_report_haiku.jsonl", "claude-haiku-4-5-20251001"),
+     ("model_report_default.jsonl", "claude-opus-5-5")],
+)  # fmt: skip
+def test_model_report_from_recorded_output(fixture: str, model: str) -> None:
+    # Recorded from Claude Code 2.1.285 with no login: answered locally.
+    report = parser.parse_model_report(_lines(fixture))
+    assert isinstance(report, parser.ModelReport)
+    assert report.model == model
+    assert parser.parse_model_list(report.text) == [
+        "sonnet", "opus", "haiku", "fable", "best",
+        "sonnet[1m]", "opus[1m]", "fable[1m]", "opusplan", "default",
+    ]  # fmt: skip
+
+
+def _edit(lines: list[bytes], kind: str, **changes: object) -> list[bytes]:
+    edited = []
+    for line in lines:
+        data = json.loads(line)
+        if data.get("type") == kind:
+            for key, value in changes.items():
+                target = data["message"] if kind == "assistant" else data
+                target[key] = value
+        edited.append(json.dumps(data).encode())
+    return edited
+
+
+@pytest.mark.parametrize(
+    ("kind", "changes"),
+    [
+        ("result", {"num_turns": 1}),
+        ("result", {"total_cost_usd": 0.002}),
+        ("result", {"usage": {"input_tokens": 5, "output_tokens": 1}}),
+        ("assistant", {"model": "claude-haiku-4-5-20251001"}),
+    ],
+)
+def test_model_report_rejects_real_requests(kind: str, changes: dict[str, object]) -> None:
+    lines = _edit(_lines("model_report_haiku.jsonl"), kind, **changes)
+    assert parser.parse_model_report(lines) == "model query made a real model request"
+
+
+def test_model_report_tripwire() -> None:
+    lines = _edit(_lines("model_report_haiku.jsonl"), "system", tools=["Bash"])
+    assert parser.parse_model_report(lines) == "model query triggered the sandbox tripwire"
+
+
+def _commands_line(*builtin: object) -> bytes:
+    commands = [{"name": f"c{i}", "builtin": b} for i, b in enumerate(builtin)]
+    return json.dumps({"type": "system", "subtype": "commands_changed",
+                       "commands": commands}).encode()  # fmt: skip
+
+
+def test_model_report_allows_only_builtin_commands() -> None:
+    # The recorded output (server conditions) announces built-in commands.
+    assert any(b"commands_changed" in line for line in _lines("model_report_haiku.jsonl"))
+    base = [line for line in _lines("model_report_haiku.jsonl") if b"commands_changed" not in line]
+    assert isinstance(parser.parse_model_report([_commands_line(True, True), *base]),
+                      parser.ModelReport)  # fmt: skip
+    for odd in ((True, False), (True, None), (True, "true")):
+        result = parser.parse_model_report([_commands_line(*odd), *base])
+        assert result == "model query triggered the sandbox tripwire"
+
+
+def test_real_requests_keep_the_strict_commands_rule() -> None:
+    # Outside the model query, any announced command is a violation.
+    events = parse_line(_commands_line(True))
+    assert [type(e) for e in events] == [ToolAttempt]
+
+
+def test_model_report_incomplete() -> None:
+    lines = [line for line in _lines("model_report_haiku.jsonl") if b'"result"' not in line]
+    assert parser.parse_model_report(lines) == "model query gave an unexpected response"
+    assert parser.parse_model_report([b"not json"]) == "model query failed: protocol"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "/model isn't available in this environment.",  # slash commands disabled
+        "Available: sonnet; opus, or a full model ID.",
+        "Available: sonnet, --evil, or a full model ID.",
+        "Available: , or a full model ID.",
+    ],
+)
+def test_model_list_unreadable(text: str) -> None:
+    assert parser.parse_model_list(text) is None
