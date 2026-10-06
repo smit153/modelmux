@@ -20,7 +20,7 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
@@ -54,7 +54,7 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: cli/python/uv.lock

@@ -113,7 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Pin the server image by digest
         env:
           DIGEST: ${{ needs.image.outputs.digest }}
@@ -164,7 +164,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Install from TestPyPI and run it
         env:
           VERSION: ${{ needs.version.outputs.version }}
