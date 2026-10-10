@@ -42,7 +42,7 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 
 # ---------------------------------------------------------------- runtime
 FROM ${PYTHON_IMAGE} AS runtime
-ARG VERSION=0.2.0
+ARG VERSION=0.3.0
 ARG CLAUDE_CODE_VERSION=2.1.285
 ARG CODEX_VERSION=0.159.2
 LABEL org.opencontainers.image.title="modelmux" \
