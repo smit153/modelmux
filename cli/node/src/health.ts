@@ -61,8 +61,8 @@ function request(
   });
 }
 
-export async function ready(port: number): Promise<boolean> {
-  const [status, body] = await getJson(port, "/health/ready");
+async function isReady(port: number): Promise<boolean> {
+  const [status, body] = await server.getJson(port, "/health/ready");
   return (
     status === 200 &&
     typeof body === "object" &&
@@ -73,6 +73,12 @@ export async function ready(port: number): Promise<boolean> {
 }
 
 /** Sleep; Ctrl+C ends it early with `Interrupted`. */
+/** The calls commands make to a running server. Replaceable in tests. */
+export const server = {
+  getJson,
+  ready: isReady,
+};
+
 export const sleep = (seconds: number): Promise<void> =>
   interruptible(new Promise((resolve) => setTimeout(resolve, seconds * 1000)));
 

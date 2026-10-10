@@ -54,6 +54,11 @@ export function resetReleaseCache(): void {
   cached = null;
 }
 
-export function pinnedImage(): string | null {
+function readPinnedImage(): string | null {
   return releaseData().image;
 }
+
+/** Replaceable in tests. */
+export const release = {
+  pinnedImage: readPinnedImage,
+};

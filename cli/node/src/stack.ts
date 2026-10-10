@@ -14,7 +14,7 @@ import { type Docker, PULL_TIMEOUT, type Result, type RunOptions } from "./docke
 import { CliError, DockerError, UsageError } from "./errors.ts";
 import { writePrivate } from "./files.ts";
 import { type Provider, sharedDir } from "./providers.ts";
-import { pinnedImage } from "./release.ts";
+import { release } from "./release.ts";
 import { repr, sortedStrings } from "./text.ts";
 
 export const PROJECT = "modelmux";
@@ -34,7 +34,7 @@ export function serviceName(provider: Provider): string {
 
 /** The image to run: --image, then the saved override, then the pinned release image. */
 export function resolveImage(config: Config, override: string | null = null): string {
-  const image = override || config.image || pinnedImage();
+  const image = override || config.image || release.pinnedImage();
   if (!image) {
     throw new UsageError("This development build of modelmux has no pinned server image.", {
       hint: "Pass one explicitly, e.g. --image modelmux:dev (it is remembered).",

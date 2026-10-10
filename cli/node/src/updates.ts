@@ -25,7 +25,7 @@ function compare(a: readonly number[], b: readonly number[]): number {
 }
 
 /** The newest modelmux-cli on npm, or null if it cannot be checked. */
-export async function latestVersion(timeout = 5.0): Promise<string | null> {
+async function fetchLatestVersion(timeout = 5.0): Promise<string | null> {
   try {
     const response = await fetch(NPM_URL, { signal: AbortSignal.timeout(timeout * 1000) });
     if (!response.ok) return null;
@@ -46,7 +46,7 @@ export function newerAvailable(current: string, latest: string | null): boolean 
 }
 
 /** Can we reach the image registry? Any HTTP answer (even 401) counts. */
-export async function registryReachable(timeout = 5.0): Promise<boolean> {
+async function isRegistryReachable(timeout = 5.0): Promise<boolean> {
   try {
     await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(timeout * 1000) });
     return true;
@@ -54,3 +54,9 @@ export async function registryReachable(timeout = 5.0): Promise<boolean> {
     return false;
   }
 }
+
+/** The network checks. Replaceable in tests. */
+export const registry = {
+  latestVersion: fetchLatestVersion,
+  registryReachable: isRegistryReachable,
+};

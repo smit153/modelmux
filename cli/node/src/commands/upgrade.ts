@@ -45,7 +45,7 @@ export async function run(args: Args, console: Console): Promise<number> {
     console.success("Nothing was running; the next 'modelmux up' uses this image.");
   }
 
-  const latest = await updates.latestVersion();
+  const latest = await updates.registry.latestVersion();
   if (updates.newerAvailable(VERSION, latest)) {
     console.step(
       `modelmux-cli ${latest} is available (you have ${VERSION}). ` +

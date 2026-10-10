@@ -7,15 +7,18 @@ import { type Context, makeContext } from "../context.ts";
 import { CliError, UsageError } from "../errors.ts";
 import * as health from "../health.ts";
 import { ensurePrivateDir } from "../paths.ts";
-import { portFree } from "../ports.ts";
+import { ports } from "../ports.ts";
 import type { Provider } from "../providers.ts";
 import { ensureApiKey } from "../secretsStore.ts";
 import { buildCompose, resolveImage, serviceName, writeCompose } from "../stack.ts";
 import { repr } from "../text.ts";
 
-export const READY_TIMEOUT = 240.0;
-export const POLL_INTERVAL = 0.5;
 export const COMPOSE_UP_TIMEOUT = 300.0;
+/** How long to wait for /health/ready, and how often to ask. Replaceable in tests. */
+export const timing = {
+  readyTimeout: 240.0,
+  pollInterval: 0.5,
+};
 
 export function parsePortOverrides(values: readonly string[], known: ReadonlySet<string>): Map<string, number> {
   const ports = new Map<string, number>();
@@ -62,9 +65,9 @@ export async function startAndWait(ctx: Context, provider: Provider): Promise<vo
   };
 
   console.step(`Starting ${provider.displayName} (it checks its login, about 10-30 s)...`);
-  const ok = await health.waitUntil(() => health.ready(port), {
-    timeout: READY_TIMEOUT,
-    interval: POLL_INTERVAL,
+  const ok = await health.waitUntil(() => health.server.ready(port), {
+    timeout: timing.readyTimeout,
+    interval: timing.pollInterval,
     shouldStop: stopped,
   });
   if (!ok) {
@@ -116,7 +119,7 @@ export async function runningAndReady(ctx: Context, providers: readonly Provider
   const ready = new Set<string>();
   for (const p of providers) {
     const s = states.get(serviceName(p));
-    if (s !== undefined && s.state === "running" && (await health.ready(ctx.config.port(p.name)))) {
+    if (s !== undefined && s.state === "running" && (await health.server.ready(ctx.config.port(p.name)))) {
       ready.add(p.name);
     }
   }
@@ -158,7 +161,7 @@ export async function checkPorts(ctx: Context, providers: readonly Provider[]): 
   for (const provider of providers) {
     const running = states.get(serviceName(provider));
     const port = ctx.config.port(provider.name);
-    if ((running === undefined || running.state !== "running") && !(await portFree(port))) {
+    if ((running === undefined || running.state !== "running") && !(await ports.portFree(port))) {
       throw new CliError(
         `Port ${port} for ${provider.displayName} is already in use by another program.`,
         {

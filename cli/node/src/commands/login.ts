@@ -61,7 +61,7 @@ export function chooseMethod(provider: Provider, requested: string | null): Logi
 export async function ensureRunningAndTested(ctx: Context, provider: Provider): Promise<void> {
   const port = ctx.config.port(provider.name);
   const state = (await ctx.stack.states()).get(serviceName(provider));
-  if (state !== undefined && state.state === "running" && (await health.ready(port))) {
+  if (state !== undefined && state.state === "running" && (await health.server.ready(port))) {
     ctx.console.success(`${provider.displayName} is running at ${health.baseUrl(port)}/v1`);
   } else {
     await upModule.checkPorts(ctx, [provider]);

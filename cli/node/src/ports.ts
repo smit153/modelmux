@@ -12,7 +12,7 @@ import { LOCALHOST } from "./health.ts";
  * ignores TIME_WAIT but still fails against a live listener. On Windows Node
  * binds exclusively, so a port in use is never "stolen".
  */
-export function portFree(port: number, host: string = LOCALHOST): Promise<boolean> {
+function isFree(port: number, host: string = LOCALHOST): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.unref();
@@ -22,3 +22,8 @@ export function portFree(port: number, host: string = LOCALHOST): Promise<boolea
     });
   });
 }
+
+/** Replaceable in tests. */
+export const ports = {
+  portFree: isFree,
+};

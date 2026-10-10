@@ -55,7 +55,7 @@ export async function status(_args: Args, console: Console): Promise<number> {
     const container = state ? state.state : "not started";
     const login = image === null ? "?" : (await stack.loggedIn(provider, image)) ? "yes" : "no";
     let healthy: string;
-    if (state && state.state === "running") healthy = (await health.ready(port)) ? "ready" : "starting";
+    if (state && state.state === "running") healthy = (await health.server.ready(port)) ? "ready" : "starting";
     else healthy = "-";
     const url = healthy === "ready" ? `${health.baseUrl(port)}/v1` : "-";
     rows.push([name, container, login, healthy, url]);

@@ -25,7 +25,7 @@ export async function keyShow(_args: Args, console: Console): Promise<number> {
 }
 
 export async function modelsFor(port: number, apiKey: string): Promise<string[]> {
-  const [status, body] = await health.getJson(port, "/v1/models", { apiKey });
+  const [status, body] = await health.server.getJson(port, "/v1/models", { apiKey });
   if (status !== 200 || typeof body !== "object" || body === null || Array.isArray(body)) return [];
   const data = (body as Record<string, unknown>).data;
   if (!Array.isArray(data)) return [];

@@ -8,7 +8,7 @@ import type { Console } from "../console.ts";
 import { type Context, makeContext } from "../context.ts";
 import { CliError, DockerError } from "../errors.ts";
 import * as health from "../health.ts";
-import { portFree } from "../ports.ts";
+import { ports } from "../ports.ts";
 import type { Provider } from "../providers.ts";
 import { readApiKey, SECRETS_FILE } from "../secretsStore.ts";
 import { resolveImage, serviceName } from "../stack.ts";
@@ -77,7 +77,7 @@ async function checkDocker(ctx: Context, report: Report): Promise<boolean> {
 }
 
 async function checkNetworkAndVersion(report: Report): Promise<void> {
-  if (await updates.registryReachable()) {
+  if (await updates.registry.registryReachable()) {
     report.ok("The image registry (ghcr.io) is reachable");
   } else {
     report.warn(
@@ -85,7 +85,7 @@ async function checkNetworkAndVersion(report: Report): Promise<void> {
       "Check your connection or proxy (HTTPS_PROXY, and Docker's proxy settings).",
     );
   }
-  const latest = await updates.latestVersion();
+  const latest = await updates.registry.latestVersion();
   if (latest === null) {
     report.warn("Could not check npm for a newer modelmux-cli");
   } else if (updates.newerAvailable(VERSION, latest)) {
@@ -115,7 +115,7 @@ function checkFiles(ctx: Context, report: Report): boolean {
 
 async function portConflict(ctx: Context, provider: Provider, report: Report): Promise<boolean> {
   const port = ctx.config.port(provider.name);
-  if (await portFree(port)) return false;
+  if (await ports.portFree(port)) return false;
   report.fail(
     `${provider.displayName}: port ${port} is used by another program`,
     `Choose another: modelmux up --port ${provider.name}=<port>`,
@@ -136,11 +136,11 @@ export function stoppedHint(provider: Provider, reason: string | null): string {
 async function checkRunning(ctx: Context, provider: Provider, apiKey: string, report: Report): Promise<void> {
   const { name, displayName: display } = provider;
   const port = ctx.config.port(name);
-  if (!(await health.ready(port))) {
+  if (!(await health.server.ready(port))) {
     report.warn(`${display}: running but not ready yet`, `Watch it: modelmux logs ${name} -f`);
     return;
   }
-  const [status] = await health.getJson(port, "/v1/models", { apiKey });
+  const [status] = await health.server.getJson(port, "/v1/models", { apiKey });
   if (status === 200) {
     report.ok(`${display}: logged in, running and answering at ${health.baseUrl(port)}/v1`);
   } else if (status === 401) {
