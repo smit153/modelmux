@@ -1,0 +1,2 @@
+# Recorded output compared byte for byte: never convert line endings.
+/test/fixtures/** -text
