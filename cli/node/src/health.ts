@@ -2,6 +2,8 @@
 
 import http from "node:http";
 
+import { interruptible, throwIfInterrupted } from "./interrupt.ts";
+
 export const LOCALHOST = "127.0.0.1";
 
 export function baseUrl(port: number): string {
@@ -10,6 +12,14 @@ export function baseUrl(port: number): string {
 
 /** GET `path` on the local server. Resolves to [status, body]; status 0 if unreachable. */
 export function getJson(
+  port: number,
+  urlPath: string,
+  options: { timeout?: number; apiKey?: string | null } = {},
+): Promise<[number, unknown]> {
+  return interruptible(request(port, urlPath, options));
+}
+
+function request(
   port: number,
   urlPath: string,
   options: { timeout?: number; apiKey?: string | null } = {},
@@ -62,8 +72,9 @@ export async function ready(port: number): Promise<boolean> {
   );
 }
 
+/** Sleep; Ctrl+C ends it early with `Interrupted`. */
 export const sleep = (seconds: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  interruptible(new Promise((resolve) => setTimeout(resolve, seconds * 1000)));
 
 export interface WaitOptions {
   timeout: number;
@@ -84,6 +95,7 @@ export async function waitUntil(
   const clock = options.clock ?? (() => performance.now() / 1000);
   const deadline = clock() + options.timeout;
   for (;;) {
+    throwIfInterrupted();
     if (await check()) return true;
     if ((await shouldStop()) || clock() >= deadline) return false;
     await pause(interval);

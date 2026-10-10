@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "modelmux": "dist/main.js"
+    "modelmux": "dist/bin.js"
   },
   "files": [
     "dist"
@@ -28,10 +28,10 @@
     "cli"
   ],
   "scripts": {
-    "build": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs clean && tsc -p tsconfig.build.json && node scripts/build.mjs shared",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"test/**/*.test.ts\"",
-    "prepack": "node scripts/build.mjs"
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

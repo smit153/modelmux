@@ -166,7 +166,7 @@ export interface DockerOptions {
 }
 
 export interface TtyOptions {
-  onOutput: (data: Buffer) => Buffer | null;
+  onOutput: (data: Buffer) => Buffer | null | Promise<Buffer | null>;
   timeout: number;
   stdout?: { write(data: Buffer): unknown };
 }
@@ -330,8 +330,9 @@ export class Docker {
     const child = this.spawnFn(file!, rest, { stdio: ["inherit", "pipe", "inherit"] });
     child.stdout?.on("data", (chunk: Buffer) => {
       sink.write(chunk);
-      const extra = options.onOutput(chunk);
-      if (extra) sink.write(extra);
+      void Promise.resolve(options.onOutput(chunk)).then((extra) => {
+        if (extra) sink.write(extra);
+      });
     });
     return this.supervise(child, file!, options.timeout, () => new Timeout());
   }

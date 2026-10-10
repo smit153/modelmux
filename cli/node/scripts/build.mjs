@@ -1,11 +1,11 @@
-// Build the package: compile src/ to dist/ and bundle the repository's
-// language-neutral /shared data as dist/_shared (like hatch_build.py does for
-// the Python CLI). Run by `npm run build` and automatically by `npm pack` /
-// `npm publish` (prepack).
+// Build steps around `tsc` (see "build" in package.json):
+//   node scripts/build.mjs clean   remove dist/
+//   node scripts/build.mjs shared  bundle the repository's language-neutral
+//                                  /shared data as dist/_shared (like
+//                                  hatch_build.py does for the Python CLI)
+// `npm pack` / `npm publish` run the whole build first (prepack).
 
-import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, rmSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,14 +23,17 @@ if (!complete) {
   process.exit(1);
 }
 
-rmSync(dist, { recursive: true, force: true });
-const tsc = createRequire(import.meta.url).resolve("typescript/bin/tsc");
-const result = spawnSync(process.execPath, [tsc, "-p", join(root, "tsconfig.build.json")], {
-  stdio: "inherit",
-});
-if (result.status !== 0) process.exit(result.status ?? 1);
+const step = process.argv[2];
+if (step === "clean") {
+  rmSync(dist, { recursive: true, force: true });
+  process.exit(0);
+}
+if (step !== "shared") {
+  console.error("usage: node scripts/build.mjs clean|shared");
+  process.exit(2);
+}
 
 for (const part of [...PARTS, ...FILES]) {
   cpSync(join(shared, part), join(dist, "_shared", part), { recursive: true });
 }
-if (process.platform !== "win32") chmodSync(join(dist, "main.js"), 0o755);
+if (process.platform !== "win32") chmodSync(join(dist, "bin.js"), 0o755);
