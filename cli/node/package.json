@@ -1,6 +1,6 @@
 {
   "name": "modelmux-cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Set up, log in to and run ModelMux: AI coding CLIs as an OpenAI-compatible API",
   "license": "Apache-2.0",
   "type": "module",
