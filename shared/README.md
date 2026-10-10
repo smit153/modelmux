@@ -1,7 +1,7 @@
 # Shared data
 
 Language-neutral files used by every ModelMux CLI implementation (Python
-today, possibly Node later). Implementations share this **data**, never code.
+and Node). Implementations share this **data**, never code.
 
 | Path | What |
 |---|---|

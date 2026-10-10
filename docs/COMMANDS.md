@@ -8,6 +8,7 @@ root unless a step says otherwise.
 
 ```bash
 pipx install modelmux-cli                 # or: uvx --from modelmux-cli modelmux <command>
+npm install -g modelmux-cli               # Node.js 22+; or: npx modelmux-cli <command>
 modelmux up [claude|codex] [--image REF] [--port claude=9101]
 modelmux login claude [--method console] [--no-browser] [--raw] [--force]
 modelmux login codex  [--method api-key]
