@@ -1,0 +1,2 @@
+usage: modelmux up [-h] [--image REF] [--port PROVIDER=PORT] [provider ...]
+modelmux up: error: argument --port: expected one argument

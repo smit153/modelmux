@@ -2,7 +2,7 @@
 
 The release workflow writes the server image pinned by digest
 (``ghcr.io/smit153/modelmux@sha256:...``) into that file before building, so
-every CLI implementation (Python today, Node later) runs the same image. In a
+every CLI implementation (Python and Node) runs the same image. In a
 development checkout ``image`` is null: pass ``--image`` instead.
 """
 

@@ -1,0 +1,24 @@
+usage: modelmux [-h] [--version] [-v] [--no-color] <command> ...
+
+Run AI coding CLIs as a secure, OpenAI-compatible API.
+
+positional arguments:
+  <command>
+    up           start ModelMux (logged-in providers)
+    down         stop ModelMux (logins are kept)
+    logs         show server logs
+    status       what is running, logged in and healthy
+    login        log a provider in (guided)
+    logout       remove a provider's saved login
+    config       print ready-to-paste client config
+    doctor       diagnose common problems
+    upgrade      run the image matching this CLI version
+    key          the API key clients use to call ModelMux
+
+options:
+  -h, --help     show this help message and exit
+  --version      show program's version number and exit
+  -v, --verbose  show details and commands
+  --no-color     disable coloured output
+
+Start with: modelmux up, then modelmux login <provider>.

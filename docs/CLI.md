@@ -6,13 +6,20 @@ ready-to-paste config for your tools.
 
 ```bash
 pipx install modelmux-cli        # or run it without installing: uvx --from modelmux-cli modelmux
+npm install -g modelmux-cli      # or with Node.js instead (0.3.0+): npx modelmux-cli
 modelmux up                      # prepare everything, start logged-in providers
 modelmux login claude            # guided login, then a real test
 modelmux config litellm          # paste into your LiteLLM config
 ```
 
 Requirements: **Docker with Compose v2** (Docker Desktop on macOS and
-Windows) and **Python 3.10+**. The CLI has no other dependencies.
+Windows) and **Python 3.10+** or **Node.js 22+**. The CLI has no other
+dependencies.
+
+The Python package (PyPI) and the Node package (npm) are the same CLI: the
+same commands, options, messages and exit codes, the same settings directory
+and the same server image. Use whichever runtime you have; both can manage
+the same setup.
 
 ## Commands
 
@@ -48,10 +55,16 @@ Provider details live in `shared/providers/<name>.json`; see
    a **helper container** from the same image, with the same hardening as the
    server (read-only, no capabilities, non-root) and only that provider's
    login volume mounted.
-2. On **Linux and macOS** the helper runs on a pseudo-terminal: the CLI spots
-   the login link, opens your browser and still lets you type or paste the
-   code. On **Windows**, or with `--raw`, your console is attached directly:
-   open the link the provider prints.
+2. On **Linux and macOS** the CLI spots the login link in the provider's
+   output, opens your browser and still lets you type or paste the code. On
+   **Windows**, or with `--raw`, your console is attached directly: open the
+   link the provider prints.
+   - The Python CLI runs the helper on its own pseudo-terminal.
+   - The Node CLI has no pseudo-terminal of its own (that would need a
+     native add-on). Docker gives the helper a terminal fed straight from
+     yours, and only the output passes through the CLI to find the link. So
+     the Node CLI needs a real terminal to log in, and the provider sees no
+     window size (both providers print the link unwrapped either way).
 3. Afterwards the CLI checks the login, recreates the provider's container and
    waits for `/health/ready`. The server's startup check makes one tiny real
    request, so ready means the login works.
@@ -84,7 +97,8 @@ deletes.
 
 Each CLI release runs the server image built in the same release, pinned by
 digest (`ghcr.io/smit153/modelmux@sha256:…`), never `latest`. To get a newer
-server, upgrade the CLI (`pipx upgrade modelmux-cli`) and run
+server, upgrade the CLI (`pipx upgrade modelmux-cli`, or
+`npm install -g modelmux-cli@latest`) and run
 `modelmux upgrade`. `--image REF` overrides it (remembered in `config.json`),
 for example a locally built `modelmux:dev`.
 
@@ -122,3 +136,17 @@ uv run mypy
 uv run pytest
 uv run modelmux --help
 ```
+
+```bash
+cd cli/node                      # TypeScript, compiled to dist/ for npm
+npm ci
+npm run typecheck                # tsc, strict
+npm test                         # node:test, runs the .ts files directly
+npm run build && node dist/bin.js --help
+```
+
+The Node tests include the Python CLI's exact help and error output
+(`cli/node/test/fixtures/argparse`), so the two parsers cannot drift apart.
+Only `docker.ts` (and `browser.ts`, for the system's link opener) may start
+programs, never through a shell; a test enforces it, like `test_source_scan.py`
+does for Python.

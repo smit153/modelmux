@@ -54,10 +54,11 @@ safely, report accurately.
 
 ## Quick start
 
-With the `modelmux` CLI (needs Docker and Python 3.10+):
+With the `modelmux` CLI (needs Docker, and Python 3.10+ or Node.js 22+):
 
 ```bash
 pipx install modelmux-cli          # or run it without installing: uvx --from modelmux-cli modelmux
+npm install -g modelmux-cli        # the same CLI for Node.js (or: npx modelmux-cli)
 modelmux up                        # set up everything, start logged-in providers
 modelmux login claude              # guided login (opens your browser), then a real test
 modelmux config litellm            # ready-to-paste config for your tools
@@ -182,15 +183,17 @@ egress to the provider's domains. Details and the threat model:
 modelmux/
 ├── server/        # the ModelMux server (Python 3.12, FastAPI), shipped as a Docker image
 ├── cli/
-│   └── python/    # the modelmux CLI (modelmux-cli on PyPI, Python 3.10+, no dependencies)
+│   ├── python/    # the modelmux CLI (modelmux-cli on PyPI, Python 3.10+, no dependencies)
+│   └── node/      # the same CLI for Node.js (modelmux-cli on npm, Node 22+, no dependencies)
 ├── shared/        # language-neutral data the CLIs share: providers, templates, release pin
 ├── docker/        # Dockerfile, compose example, pinned AI CLI lockfile
 ├── docs/          # CLI, setup, commands, architecture, configuration, errors, drivers, releasing
 └── .github/       # CI (server, CLI on Linux/macOS/Windows, image scan) and the release workflow
 ```
 
-Components share **data** (`shared/`), never code, so a CLI in another
-language (for example a Node launcher) can be added next to `cli/python/`.
+Components share **data** (`shared/`), never code: the Python and Node CLIs
+are two implementations of the same commands, so another language can be
+added next to them.
 
 ## Development
 
@@ -207,6 +210,11 @@ LIVE_DRIVER_HOME=$HOME uv run pytest -m live tests/live   # real Claude (costs a
 cd cli/python
 uv sync                                     # Python 3.10+, no runtime dependencies
 uv run ruff check . && uv run mypy && uv run pytest
+
+# CLI (Node)
+cd cli/node
+npm ci                                      # Node 22+, dev dependencies only
+npm run typecheck && npm test
 ```
 
 Releases: see **[docs/RELEASING.md](docs/RELEASING.md)**.

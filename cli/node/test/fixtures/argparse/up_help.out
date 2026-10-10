@@ -1,0 +1,9 @@
+usage: modelmux up [-h] [--image REF] [--port PROVIDER=PORT] [provider ...]
+
+positional arguments:
+  provider              any of: claude, codex
+
+options:
+  -h, --help            show this help message and exit
+  --image REF           server image to run (remembered)
+  --port PROVIDER=PORT  local port (remembered)

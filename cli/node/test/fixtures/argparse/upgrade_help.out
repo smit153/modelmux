@@ -1,0 +1,5 @@
+usage: modelmux upgrade [-h] [--image REF]
+
+options:
+  -h, --help   show this help message and exit
+  --image REF  use a different image (advanced)

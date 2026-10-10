@@ -1,0 +1,3 @@
+usage: modelmux login [-h] [--method METHOD] [--no-browser] [--raw] [--force]
+                      {claude,codex}
+modelmux login: error: the following arguments are required: provider

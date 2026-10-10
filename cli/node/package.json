@@ -1,0 +1,43 @@
+{
+  "name": "modelmux-cli",
+  "version": "0.2.0",
+  "description": "Set up, log in to and run ModelMux: AI coding CLIs as an OpenAI-compatible API",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "modelmux": "dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "homepage": "https://github.com/smit153/modelmux",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smit153/modelmux.git",
+    "directory": "cli/node"
+  },
+  "bugs": "https://github.com/smit153/modelmux/issues",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "openai",
+    "docker",
+    "cli"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs clean && tsc -p tsconfig.build.json && node scripts/build.mjs shared",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

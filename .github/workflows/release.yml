@@ -1,12 +1,14 @@
 name: release
 
 # A tag vX.Y.Z releases everything with one version:
-#   1. check the tag matches server, CLI and shared/release.json
+#   1. check the tag matches server, both CLIs and shared/release.json
 #   2. build the multi-arch server image and push it to GHCR (no "latest" tag)
 #   3. scan it, attach provenance, produce an SBOM
-#   4. pin the image digest into the CLI and build the CLI
-#   5. publish to TestPyPI and smoke-test the install
-#   6. publish to PyPI (environment "pypi": add required reviewers to approve)
+#   4. pin the image digest into both CLIs and build them
+#   5. publish the Python CLI to TestPyPI and smoke-test the install; the Node
+#      CLI tarball is installed and smoke-tested in its build job
+#   6. publish to PyPI and npm (environments "pypi" and "npm": add required
+#      reviewers to approve each)
 #   7. create the GitHub release
 # Run it manually (workflow_dispatch) with dry_run=true to build and test
 # everything without pushing or publishing.
@@ -40,10 +42,12 @@ jobs:
         run: |
           server=$(sed -n 's/^version = "\(.*\)"$/\1/p' server/pyproject.toml)
           cli=$(sed -n 's/^version = "\(.*\)"$/\1/p' cli/python/pyproject.toml)
+          node=$(python3 -c 'import json; print(json.load(open("cli/node/package.json"))["version"])')
           data=$(python3 -c 'import json; print(json.load(open("shared/release.json"))["version"])')
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then tag="${GITHUB_REF_NAME#v}"; else tag="$cli"; fi
-          echo "tag=$tag server=$server cli=$cli release.json=$data"
-          if [ "$tag" != "$server" ] || [ "$tag" != "$cli" ] || [ "$tag" != "$data" ]; then
+          echo "tag=$tag server=$server cli=$cli cli-node=$node release.json=$data"
+          if [ "$tag" != "$server" ] || [ "$tag" != "$cli" ] || [ "$tag" != "$node" ] \
+              || [ "$tag" != "$data" ]; then
             echo "::error::Versions differ. Bump all of them together (see docs/RELEASING.md)."
             exit 1
           fi
@@ -149,6 +153,60 @@ jobs:
           name: dist
           path: dist/
 
+  cli-node:
+    needs: [version, image]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli/node
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cli/node/package-lock.json
+      - name: Test the CLI as committed
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+      - name: Pin the server image by digest
+        working-directory: .
+        env:
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, re
+          digest = os.environ["DIGEST"]
+          if not digest and os.environ.get("DRY_RUN") == "true":
+              digest = "sha256:" + "0" * 64  # nothing was pushed in a dry run
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit(f"unexpected digest: {digest!r}")
+          path = "shared/release.json"
+          data = json.load(open(path))
+          data["image"] = f"{os.environ['IMAGE_NAME']}@{digest}"
+          open(path, "w").write(json.dumps(data, indent=2) + "\n")
+          print(data)
+          EOF
+      - name: Build the CLI (npm pack)
+        run: |
+          mkdir -p ../../dist-npm
+          npm pack --pack-destination ../../dist-npm
+      - name: The packed CLI installs, runs and carries the pinned image
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tarball="$(ls ../../dist-npm/modelmux-cli-*.tgz)"
+          npm install -g "$tarball"
+          test "$(modelmux --version)" = "modelmux ${VERSION}"
+          tar -xzOf "$tarball" package/dist/_shared/release.json | python3 -c \
+            "import json, sys; i = json.load(sys.stdin)['image']; print(i); assert i and '@sha256:' in i"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-npm
+          path: dist-npm/
+
   testpypi:
     needs: [version, cli]
     if: github.event_name == 'push'
@@ -194,8 +252,37 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
 
+  npm:
+    needs: [version, cli-node, testpypi]
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/modelmux-cli
+    permissions:
+      id-token: write  # npm trusted publishing (OIDC) and provenance
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-npm
+          path: dist-npm/
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - name: npm with trusted publishing (>= 11.5.1)
+        run: npm install -g npm@latest
+      - name: Publish (the tested tarball, unless this version is already on npm)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if npm view "modelmux-cli@${VERSION}" version 2>/dev/null | grep -qx "${VERSION}"; then
+            echo "modelmux-cli ${VERSION} is already on npm"
+            exit 0
+          fi
+          npm publish dist-npm/modelmux-cli-"${VERSION}".tgz --access public --provenance
+
   github-release:
-    needs: [version, pypi]
+    needs: [version, pypi, npm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -210,5 +297,5 @@ jobs:
         run: |
           gh release create "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --verify-tag \
             --title "ModelMux ${VERSION}" \
-            --notes "Install: pipx install modelmux-cli==${VERSION}  ·  Image: ${IMAGE_NAME}:${VERSION}" \
-            assets/dist/* assets/sbom/sbom.cdx.json
+            --notes "Install: pipx install modelmux-cli==${VERSION}  or  npm install -g modelmux-cli@${VERSION}  ·  Image: ${IMAGE_NAME}:${VERSION}" \
+            assets/dist/* assets/dist-npm/* assets/sbom/sbom.cdx.json
