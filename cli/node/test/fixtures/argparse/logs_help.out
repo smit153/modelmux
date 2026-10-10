@@ -1,0 +1,9 @@
+usage: modelmux logs [-h] [-f] [--tail N] [{claude,codex}]
+
+positional arguments:
+  {claude,codex}
+
+options:
+  -h, --help      show this help message and exit
+  -f, --follow    keep streaming new lines
+  --tail N        lines to show (100)

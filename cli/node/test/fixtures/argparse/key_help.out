@@ -1,0 +1,8 @@
+usage: modelmux key [-h] <action> ...
+
+positional arguments:
+  <action>
+    show      print the API key
+
+options:
+  -h, --help  show this help message and exit

@@ -1,0 +1,4 @@
+usage: modelmux key show [-h]
+
+options:
+  -h, --help  show this help message and exit

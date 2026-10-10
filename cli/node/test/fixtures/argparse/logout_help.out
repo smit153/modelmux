@@ -1,0 +1,8 @@
+usage: modelmux logout [-h] [-y] {claude,codex}
+
+positional arguments:
+  {claude,codex}
+
+options:
+  -h, --help      show this help message and exit
+  -y, --yes       do not ask for confirmation

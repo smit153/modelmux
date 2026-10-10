@@ -1,0 +1,10 @@
+usage: modelmux config [-h] [--provider {claude,codex}] [--reveal-key]
+                       {litellm,openai-python,langchain,curl,env}
+
+positional arguments:
+  {litellm,openai-python,langchain,curl,env}
+
+options:
+  -h, --help            show this help message and exit
+  --provider {claude,codex}
+  --reveal-key          include the real API key

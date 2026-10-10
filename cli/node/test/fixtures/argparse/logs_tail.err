@@ -1,0 +1,2 @@
+usage: modelmux logs [-h] [-f] [--tail N] [{claude,codex}]
+modelmux logs: error: argument --tail: invalid int value: 'x'

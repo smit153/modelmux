@@ -1,0 +1,12 @@
+usage: modelmux login [-h] [--method METHOD] [--no-browser] [--raw] [--force]
+                      {claude,codex}
+
+positional arguments:
+  {claude,codex}
+
+options:
+  -h, --help       show this help message and exit
+  --method METHOD  login method (see the provider's options)
+  --no-browser     do not open a browser
+  --raw            show the provider's raw output
+  --force          log in again even if logged in

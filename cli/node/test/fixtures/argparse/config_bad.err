@@ -1,0 +1,3 @@
+usage: modelmux config [-h] [--provider {claude,codex}] [--reveal-key]
+                       {litellm,openai-python,langchain,curl,env}
+modelmux config: error: argument target: invalid choice: 'xml' (choose from 'litellm', 'openai-python', 'langchain', 'curl', 'env')
