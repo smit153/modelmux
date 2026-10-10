@@ -2,7 +2,8 @@
 //   node scripts/build.mjs clean   remove dist/
 //   node scripts/build.mjs shared  bundle the repository's language-neutral
 //                                  /shared data as dist/_shared (like
-//                                  hatch_build.py does for the Python CLI)
+//                                  hatch_build.py does for the Python CLI),
+//                                  and the repository's LICENSE
 // `npm pack` / `npm publish` run the whole build first (prepack).
 
 import { chmodSync, cpSync, existsSync, rmSync, statSync } from "node:fs";
@@ -36,4 +37,5 @@ if (step !== "shared") {
 for (const part of [...PARTS, ...FILES]) {
   cpSync(join(shared, part), join(dist, "_shared", part), { recursive: true });
 }
+cpSync(join(root, "..", "..", "LICENSE"), join(root, "LICENSE"));
 if (process.platform !== "win32") chmodSync(join(dist, "bin.js"), 0o755);
