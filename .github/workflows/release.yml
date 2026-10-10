@@ -279,7 +279,8 @@ jobs:
             echo "modelmux-cli ${VERSION} is already on npm"
             exit 0
           fi
-          npm publish dist-npm/modelmux-cli-"${VERSION}".tgz --access public --provenance
+          # "./" matters: without it npm reads "dist-npm/..." as a GitHub repo.
+          npm publish ./dist-npm/modelmux-cli-"${VERSION}".tgz --access public --provenance
 
   github-release:
     needs: [version, pypi, npm]
